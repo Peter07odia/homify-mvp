@@ -1,6 +1,9 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
 
+// Reference the type declarations
+/// <reference path="./deno.d.ts" />
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -8,16 +11,27 @@ const corsHeaders = {
 
 const MODES = {
   EMPTY: 'empty',    // Remove all furniture and decor
-  UPSTYLE: 'upstyle' // Keep furniture but reimagine the style (premium feature)
+  CLEAN: 'clean'     // Keep furniture but reimagine the style (premium feature)
 }
 
 serve(async (req: Request) => {
+  // Detailed request logging
+  console.log("=== REQUEST RECEIVED ===");
+  console.log("Method:", req.method);
+  console.log("URL:", req.url);
+  console.log("Headers:", JSON.stringify(Object.fromEntries(req.headers.entries()), null, 2));
+  
   // Handle OPTIONS request for CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    // Log environment variables (redact sensitive values)
+    console.log("=== ENVIRONMENT ===");
+    console.log("N8N_WEBHOOK_URL configured:", !!Deno.env.get('N8N_WEBHOOK_URL'));
+    console.log("Auth credentials configured:", !!Deno.env.get('N8N_WEBHOOK_AUTH_USERNAME') && !!Deno.env.get('N8N_WEBHOOK_AUTH_PASSWORD'));
+    
     // Create a Supabase client with the Auth context of the function
     const supabaseClient = createClient(
       // Supabase API URL - env var exported by default when deployed
@@ -27,23 +41,49 @@ serve(async (req: Request) => {
       // Create client with Auth context of the function
       {
         global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
+          // Don't pass Authorization header for anonymous access
+          headers: { },
         },
       }
     )
 
     if (req.method === 'POST') {
+      console.log("=== PROCESSING POST REQUEST ===");
       // Handle image upload
       const formData = await req.formData()
-      const file = formData.get('file')
+      // @ts-ignore - FormData.get() is available in Deno
+      const file = formData.get('file') as File | null
       
-      // Get the processing mode (empty or upstyle)
-      const mode = formData.get('mode') as string || MODES.EMPTY
+      // Get the processing mode (empty or clean)
+      // Cast to string and use empty mode as fallback
+      // @ts-ignore - FormData.get() is available in Deno
+      const modeStr = formData.get('mode') as string | null
+      const mode = modeStr ? String(modeStr) : MODES.EMPTY
+      
+      // Get image dimensions if provided
+      // @ts-ignore - FormData.get() is available in Deno
+      const imageWidthStr = formData.get('imageWidth') as string | null;
+      // @ts-ignore - FormData.get() is available in Deno
+      const imageHeightStr = formData.get('imageHeight') as string | null;
+      
+      // Parse dimensions to numbers or use null if not provided
+      const imageWidth = imageWidthStr ? parseInt(imageWidthStr, 10) : null;
+      const imageHeight = imageHeightStr ? parseInt(imageHeightStr, 10) : null;
+      
+      console.log("=== FORM DATA ===");
+      console.log("File received:", file ? "Yes" : "No");
+      if (file) {
+        console.log("File type:", file.type);
+        console.log("File size:", file.size);
+        console.log("File name:", file.name);
+      }
+      console.log("Mode:", mode);
+      console.log("Image dimensions:", imageWidth && imageHeight ? `${imageWidth}x${imageHeight}` : "Not provided");
       
       // Validate mode
-      if (mode !== MODES.EMPTY && mode !== MODES.UPSTYLE) {
+      if (mode !== MODES.EMPTY && mode !== MODES.CLEAN) {
         return new Response(
-          JSON.stringify({ error: 'Invalid mode. Must be "empty" or "upstyle"' }),
+          JSON.stringify({ error: 'Invalid mode. Must be "empty" or "clean"' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
         )
       }
@@ -78,8 +118,21 @@ serve(async (req: Request) => {
 
       if (uploadError) {
         console.error('Upload error:', uploadError)
+        console.error('Upload error details:', JSON.stringify(uploadError))
+        
+        // Check if the bucket exists
+        const { data: buckets, error: bucketsError } = await supabaseClient
+          .storage
+          .listBuckets()
+        
+        if (bucketsError) {
+          console.error('Failed to list buckets:', bucketsError)
+        } else {
+          console.log('Available buckets:', buckets.map(b => b.name).join(', '))
+        }
+        
         return new Response(
-          JSON.stringify({ error: 'Failed to upload image' }),
+          JSON.stringify({ error: 'Failed to upload image', details: uploadError }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
       }
@@ -120,51 +173,91 @@ serve(async (req: Request) => {
           .from('room_jobs')
           .update({ status: 'error' })
           .eq('id', jobId)
-          
+        
+        console.log("ERROR: N8N webhook URL not configured");
         return new Response(
           JSON.stringify({ error: 'N8N webhook URL not configured' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
       }
 
-      // Send the image URL, job ID, and processing mode to n8n
-      const n8nResponse = await fetch(n8nWebhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jobId,
-          imageUrl: publicUrl,
-          mode,  // Pass the mode to n8n
-          timestamp: Date.now(),
-        }),
-      })
+      // Get authentication credentials
+      const username = Deno.env.get('N8N_WEBHOOK_AUTH_USERNAME')
+      const password = Deno.env.get('N8N_WEBHOOK_AUTH_PASSWORD')
+      
+      // Prepare headers with authentication
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      
+      // Add Basic Authentication if credentials are provided
+      if (username && password) {
+        const authString = btoa(`${username}:${password}`)
+        headers['Authorization'] = `Basic ${authString}`
+        console.log('Added Basic Auth header for n8n webhook')
+      } else {
+        console.log('No authentication credentials found for n8n webhook')
+      }
 
-      if (!n8nResponse.ok) {
-        console.error('n8n webhook error:', await n8nResponse.text())
+      // Send the image URL, job ID, and processing mode to n8n
+      console.log(`Calling n8n webhook at: ${n8nWebhookUrl}`)
+      const payloadObject = {
+        jobId,
+        imageUrl: publicUrl,
+        mode,
+        timestamp: Date.now(),
+        imageDimensions: (imageWidth && imageHeight) ? {
+          width: imageWidth,
+          height: imageHeight
+        } : undefined
+      };
+      console.log(`With payload:`, JSON.stringify(payloadObject, null, 2))
+
+      try {
+        const n8nResponse = await fetch(n8nWebhookUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payloadObject),
+        })
+
+        console.log(`n8n response status: ${n8nResponse.status}`)
         
-        // Update job status to error
-        await supabaseClient
-          .from('room_jobs')
-          .update({ status: 'error' })
-          .eq('id', jobId)
+        if (!n8nResponse.ok) {
+          const responseText = await n8nResponse.text()
+          console.error('n8n webhook error:', responseText)
+          console.error('n8n webhook status:', n8nResponse.status)
           
+          // Update job status to error
+          await supabaseClient
+            .from('room_jobs')
+            .update({ status: 'error' })
+            .eq('id', jobId)
+            
+          return new Response(
+            JSON.stringify({ error: 'Failed to trigger image processing', details: responseText }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+          )
+        }
+
+        // Log success
+        console.log("Successfully called n8n webhook!");
+        
+        // Return the job ID to the client for polling
         return new Response(
-          JSON.stringify({ error: 'Failed to trigger image processing' }),
+          JSON.stringify({ 
+            jobId,
+            status: 'processing',
+            message: `Image uploaded successfully. Processing ${mode} room transformation.`
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } catch (error) {
+        console.error('n8n webhook error:', error)
+        return new Response(
+          JSON.stringify({ error: 'Failed to trigger image processing', details: String(error) }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
       }
-
-      // Return the job ID to the client for polling
-      return new Response(
-        JSON.stringify({ 
-          jobId,
-          status: 'processing',
-          message: `Image uploaded successfully. Processing ${mode} room transformation.`
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
     } 
     else if (req.method === 'GET') {
       // Handle job status check
@@ -201,7 +294,7 @@ serve(async (req: Request) => {
       }
 
       // Prepare response with status
-      const response = {
+      const response: JobResponse = {
         status: jobData.status,
         createdAt: jobData.created_at,
         updatedAt: jobData.updated_at
@@ -226,13 +319,13 @@ serve(async (req: Request) => {
         response.emptyUrl = emptyUrl
       }
       
-      if (jobData.upstyle_path) {
-        const { data: { publicUrl: upstyleUrl } } = supabaseClient
+      if (jobData.clean_path) {
+        const { data: { publicUrl: cleanUrl } } = supabaseClient
           .storage
           .from('rooms')
-          .getPublicUrl(jobData.upstyle_path)
+          .getPublicUrl(jobData.clean_path)
         
-        response.upstyleUrl = upstyleUrl
+        response.cleanUrl = cleanUrl
       }
 
       return new Response(
