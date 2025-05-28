@@ -1,116 +1,194 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   TouchableOpacity, 
   Alert,
-  Image,
   ActivityIndicator,
-  Platform,
+  Dimensions,
+  PanResponder,
+  Animated,
 } from 'react-native';
-import { Camera, CameraType } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-type CameraScreenNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'Camera'
->;
+type CameraScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Camera'>;
+type CameraScreenRouteProp = RouteProp<RootStackParamList, 'Camera'>;
 
 const CameraScreen = () => {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [type, setType] = useState(CameraType.back);
-  const [flash, setFlash] = useState(Camera.Constants.FlashMode.off);
-  const [isTakingPicture, setIsTakingPicture] = useState(false);
-  const cameraRef = useRef<Camera>(null);
   const navigation = useNavigation<CameraScreenNavigationProp>();
+  const route = useRoute<CameraScreenRouteProp>();
+  const { returnToPreview, activeJobId } = route.params || {};
+  
+  const [permission, requestPermission] = useCameraPermissions();
+  const [facing, setFacing] = useState<'back' | 'front'>('back');
+  const [flash, setFlash] = useState<'off' | 'on'>('off');
+  const cameraRef = useRef<CameraView>(null);
 
-  // Request camera permissions on mount
-  useEffect(() => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status === 'granted');
-    })();
+  // Swipe gesture handling
+  const pan = useRef(new Animated.Value(0)).current;
+  const swipeThreshold = 100;
+  const velocityThreshold = 0.3;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond to horizontal swipes
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 10;
+      },
+      onPanResponderGrant: () => {
+        pan.setValue(0);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        pan.setValue(gestureState.dx);
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const { dx, vx } = gestureState;
+        
+        if (Math.abs(dx) > swipeThreshold || Math.abs(vx) > velocityThreshold) {
+          if (dx > 0) {
+            // Swipe right - go back
+            handleSwipeBack();
+          } else {
+            // Swipe left - pick image from gallery
+            handleSwipeForward();
+          }
+        }
+        
+        Animated.spring(pan, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
+
+  const handleSwipeBack = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    handleBack();
   }, []);
 
-  // Handle taking a picture
-  const takePicture = async () => {
-    if (!cameraRef.current) return;
+  const handleSwipeForward = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    pickImage();
+  }, []);
+
+  // Local state
+  const [showActiveJobBanner, setShowActiveJobBanner] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  // Handle back navigation
+  const handleBack = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.goBack();
+  }, [navigation]);
+
+  // Handle capture
+  const handleCapture = useCallback(async () => {
+    if (!cameraRef.current || isCapturing) return;
     
     try {
+      setIsCapturing(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setIsTakingPicture(true);
       
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
-        skipProcessing: Platform.OS === 'android', // Skip processing on Android for speed
+        quality: 0.8,
+        base64: false,
       });
       
-      // Navigate to photo confirmation screen with the photo URI
-      navigation.navigate('PhotoConfirmation', { imageUri: photo.uri });
+      if (photo) {
+        console.log('[CameraScreen] Photo captured:', photo.uri);
+        navigation.navigate('Preview', { 
+          imageUri: photo.uri,
+          mode: 'empty'
+        });
+      }
     } catch (error) {
-      console.error('Error taking picture:', error);
-      Alert.alert('Error', 'Failed to take picture. Please try again.');
+      console.error('[CameraScreen] Capture error:', error);
+      Alert.alert('Error', 'Failed to capture photo. Please try again.');
     } finally {
-      setIsTakingPicture(false);
+      setIsCapturing(false);
     }
-  };
+  }, [navigation, isCapturing]);
 
-  // Toggle between front and back camera
-  const toggleCameraType = () => {
-    Haptics.selectionAsync();
-    setType(current => (
-      current === CameraType.back ? CameraType.front : CameraType.back
-    ));
-  };
+  // Handle return to preview
+  const handleReturnToPreview = useCallback(() => {
+    console.log('[CameraScreen] Return to preview requested');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Since we removed global state, just hide the banner
+    setShowActiveJobBanner(false);
+  }, []);
 
-  // Toggle flash mode
-  const toggleFlash = () => {
-    Haptics.selectionAsync();
-    setFlash(current => 
-      current === Camera.Constants.FlashMode.off 
-        ? Camera.Constants.FlashMode.on 
-        : Camera.Constants.FlashMode.off
-    );
-  };
+  // Check for active jobs on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[CameraScreen] Screen focused');
+      // Since we removed global state, just hide any existing banner
+      setShowActiveJobBanner(false);
+    }, [])
+  );
 
-  // Pick image from gallery
+  // Handle flip camera
+  const toggleCameraFacing = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFacing(current => (current === 'back' ? 'front' : 'back'));
+  }, []);
+
+  // Handle flash toggle
+  const toggleFlash = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFlash(current => (current === 'off' ? 'on' : 'off'));
+  }, []);
+
+  // Request permission if needed
+  useEffect(() => {
+    if (!permission?.granted && permission?.canAskAgain) {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
+
+  useEffect(() => {
+    console.log('[CameraScreen] Mounted with params:', { returnToPreview, activeJobId });
+  }, [returnToPreview, activeJobId]);
+
+  // Handle picking image from gallery
   const pickImage = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       
-      // Request permissions
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'We need permission to access your photos');
-        return;
-      }
-      
-      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 0.7,
+        quality: 0.8,
       });
-      
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        // Navigate to photo confirmation with selected image URI
-        navigation.navigate('PhotoConfirmation', { imageUri: result.assets[0].uri });
+
+      if (!result.canceled && result.assets[0]) {
+        navigation.navigate('Preview', { imageUri: result.assets[0].uri, mode: 'empty' });
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
 
-  // Show permission denied screen
-  if (hasPermission === false) {
+  // Handle permission not granted
+  if (!permission) {
+    return <View style={styles.loadingContainer}>
+      <StatusBar style="dark" />
+      <ActivityIndicator size="large" color="#7C5C3E" />
+      <Text style={styles.loadingText}>Loading camera...</Text>
+    </View>;
+  }
+
+  if (!permission.granted) {
     return (
       <View style={styles.permissionContainer}>
         <StatusBar style="dark" />
@@ -119,75 +197,87 @@ const CameraScreen = () => {
         </Text>
         <TouchableOpacity 
           style={styles.permissionButton}
+          onPress={requestPermission}
+        >
+          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.permissionButton, { marginTop: 10, backgroundColor: '#E0D5C9' }]}
           onPress={() => {
             Haptics.selectionAsync();
-            navigation.navigate('Onboarding');
+            navigation.goBack();
           }}
         >
-          <Text style={styles.permissionButtonText}>Go Back</Text>
+          <Text style={[styles.permissionButtonText, { color: '#7C5C3E' }]}>Go Back</Text>
         </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // Show loading screen while checking permissions
-  if (hasPermission === null) {
-    return (
-      <View style={styles.loadingContainer}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="large" color="#7C5C3E" />
-        <Text style={styles.loadingText}>Loading camera...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
-      
-      {/* Camera View */}
-      <Camera 
-        ref={cameraRef}
-        style={styles.camera}
-        type={type}
-        flashMode={flash}
-      >
-        {/* Top Controls */}
-        <View style={styles.topControls}>
-          <TouchableOpacity style={styles.iconButton} onPress={toggleFlash}>
-            <MaterialIcons 
-              name={flash === Camera.Constants.FlashMode.on ? "flash-on" : "flash-off"} 
-              size={24} 
-              color="white" 
-            />
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.iconButton} onPress={toggleCameraType}>
-            <MaterialIcons name="flip-camera-ios" size={24} color="white" />
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.innerContainer}>
+        <StatusBar style="light" />
         
-        {/* Bottom Controls */}
-        <View style={styles.bottomControls}>
-          <TouchableOpacity style={styles.galleryButton} onPress={pickImage}>
-            <MaterialIcons name="photo-library" size={28} color="white" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.captureButton} 
-            onPress={takePicture}
-            disabled={isTakingPicture}
-          >
-            {isTakingPicture ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
+        {/* Active Job Banner */}
+        {showActiveJobBanner && (
+          <View style={styles.banner}>
+            <Text style={styles.bannerText}>You have an image being processed</Text>
+            <TouchableOpacity onPress={handleReturnToPreview}>
+              <Text style={styles.bannerAction}>Return to Preview</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
+        {/* Camera View */}
+        <CameraView 
+          ref={cameraRef}
+          style={styles.camera}
+          facing={facing}
+          flash={flash}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+              <MaterialIcons name="arrow-back" size={24} color="white" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Take Photo</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          {/* Controls */}
+          <View style={styles.controls}>
+            {/* Flash Toggle */}
+            <TouchableOpacity
+              style={styles.controlButton}
+              onPress={toggleFlash}
+            >
+              <MaterialIcons 
+                name={flash === 'on' ? 'flash-on' : 'flash-off'} 
+                size={24} 
+                color="white" 
+              />
+            </TouchableOpacity>
+
+            {/* Capture Button */}
+            <TouchableOpacity
+              style={[styles.captureButton, isCapturing && styles.capturingButton]}
+              onPress={handleCapture}
+              disabled={isCapturing}
+            >
               <View style={styles.captureButtonInner} />
-            )}
-          </TouchableOpacity>
-          
-          <View style={styles.emptySpace} />
-        </View>
-      </Camera>
+            </TouchableOpacity>
+
+            {/* Flip Camera */}
+            <TouchableOpacity
+              style={styles.controlButton}
+              onPress={toggleCameraFacing}
+            >
+              <MaterialIcons name="flip-camera-ios" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      </SafeAreaView>
     </View>
   );
 };
@@ -195,31 +285,58 @@ const CameraScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: 'black',
+  },
+  innerContainer: {
+    flex: 1,
   },
   camera: {
     flex: 1,
     justifyContent: 'space-between',
   },
-  topControls: {
+  header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 20,
     paddingTop: 50,
   },
-  bottomControls: {
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: 'white',
+    textAlign: 'center',
+  },
+  placeholder: {
+    width: 40,
+  },
+  controls: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingBottom: 30,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
   },
   captureButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FFF',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  capturingButton: {
+    opacity: 0.5,
   },
   captureButtonInner: {
     width: 60,
@@ -227,48 +344,45 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: '#FFF',
   },
-  iconButton: {
+  controlButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  galleryButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  emptySpace: {
-    width: 50,
   },
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFF9F5',
-    padding: 20,
+    paddingHorizontal: 40,
+  },
+  permissionTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginTop: 20,
+    marginBottom: 10,
+    textAlign: 'center',
   },
   permissionText: {
     fontSize: 16,
+    color: '#666666',
     textAlign: 'center',
-    color: '#7C5C3E',
-    marginBottom: 20,
+    lineHeight: 24,
+    marginBottom: 30,
   },
   permissionButton: {
     backgroundColor: '#7C5C3E',
+    paddingHorizontal: 24,
     paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 30,
+    borderRadius: 25,
   },
   permissionButtonText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
@@ -277,9 +391,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF9F5',
   },
   loadingText: {
-    marginTop: 12,
     fontSize: 16,
     color: '#7C5C3E',
+    marginTop: 10,
+  },
+  banner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#7C5C3E',
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  bannerText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  bannerAction: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });
 

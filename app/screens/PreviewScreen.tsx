@@ -1,34 +1,15 @@
-import React, { useEffect, useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  ActivityIndicator,
-  TouchableOpacity,
-  Dimensions,
-  Share,
-  Alert,
-  ScrollView,
-  Platform,
-  Animated,
-  PanResponder,
-} from 'react-native';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Image, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as FileSystem from 'expo-file-system';
-import * as MediaLibrary from 'expo-media-library';
 import * as Haptics from 'expo-haptics';
-import Constants from 'expo-constants';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { pollJobStatus, uploadRoomImage, fixImageUrl } from '../services/roomService';
 import { RootStackParamList } from '../navigation';
-
-const { width } = Dimensions.get('window');
-// Only show debug interface in development, not in production
-const isDevelopment = false; // Setting to false to completely disable debug UI
+import { useImageProcessing } from '../hooks/useImageProcessing';
+import { DesignStyle } from '../services/styleService';
 
 type PreviewScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -45,381 +26,258 @@ const PreviewScreen = () => {
   const route = useRoute<PreviewScreenRouteProp>();
   const { imageUri, mode = 'empty' } = route.params;
 
-  // State
-  const [loading, setLoading] = useState(true);
-  const [processingStatus, setProcessingStatus] = useState('Uploading...');
-  const [originalUrl, setOriginalUrl] = useState<string | null>(null);
-  const [processedUrl, setProcessedUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [downloadingImage, setDownloadingImage] = useState(false);
-  
-  // Animation values
-  const sliderPosition = useRef(new Animated.Value(0.5)).current;
-  const dividerOpacity = useRef(new Animated.Value(0)).current;
-  const arrowsOpacity = useRef(new Animated.Value(0)).current;
-  
-  // Calculate slider width based on screen dimensions
-  const imageSize = width - 40; // Same as previewImage width
-  
-  // Configure pan responder for draggable divider
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        // When user touches the divider, make it more visible
-        Animated.parallel([
-          Animated.timing(dividerOpacity, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(arrowsOpacity, {
-            toValue: 0,
-            duration: 150,
-            useNativeDriver: true,
-          }),
-        ]).start();
-        
-        // Add haptic feedback when starting to drag
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        // Calculate new position based on drag
-        const newPosition = Math.max(0, Math.min(gestureState.moveX / imageSize, 1));
-        sliderPosition.setValue(newPosition);
-      },
-      onPanResponderRelease: () => {
-        // When user releases, fade the divider a bit
-        Animated.parallel([
-          Animated.timing(dividerOpacity, {
-            toValue: 0.7,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(arrowsOpacity, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start();
-        
-        // Add haptic feedback when releasing drag
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      },
-    })
-  ).current;
+  // Use our simplified hooks
+  const { state: processingState, actions: processingActions } = useImageProcessing(imageUri, mode);
 
-  // Process image on component mount
-  useEffect(() => {
-    processImage();
-    
-    // Show arrows animation when images are loaded
-    if (originalUrl && processedUrl) {
-      Animated.sequence([
-        Animated.delay(500),
-        Animated.timing(arrowsOpacity, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [originalUrl, processedUrl]);
+  // Local state
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [selectedStyle, setSelectedStyle] = useState<DesignStyle>('minimal');
 
-  // Upload and process the image
-  const processImage = async () => {
-    try {
-      setLoading(true);
-      setProcessingStatus('Uploading image...');
-      
-      // Check if image exists
-      const fileInfo = await FileSystem.getInfoAsync(imageUri);
-      if (!fileInfo.exists) {
-        setError('Image file not found. Please try again.');
-        setLoading(false);
-        return;
-      }
-      
-      console.log('Processing image:', imageUri);
-      console.log('File info:', JSON.stringify(fileInfo));
-      
-      // Upload the image
-      try {
-        console.log('Attempting to upload image...');
-        const jobId = await uploadRoomImage(imageUri, mode);
-        console.log('Job created with ID:', jobId);
-        
-        // Start polling for results with different messaging based on mode
-        if (mode === 'empty') {
-          setProcessingStatus('Removing furniture...');
-        } else {
-          setProcessingStatus('Preparing to clean your room...');
-        }
-        
-        // Use a shorter timeout for faster feedback
-        const pollingResult = await pollJobStatus(jobId, 2000, 15, (status) => {
-          console.log('Status update:', status);
-          if (status === 'processing') {
-            if (mode === 'empty') {
-              setProcessingStatus('Removing furniture and decor...');
-            } else {
-              setProcessingStatus('Adding new furniture styles...');
-            }
-          }
-        });
-        
-        console.log('Processing complete, result:', JSON.stringify(pollingResult));
-        
-        if (pollingResult.status === 'error') {
-          // Use the error message from the API if available, otherwise show a generic message
-          const errorMessage = pollingResult.message || `Failed to ${mode === 'empty' ? 'empty' : 'clean'} your room. Please try again.`;
-          setError(errorMessage);
-          return;
-        }
-        
-        // Process URLs
-        handleProcessedResult(pollingResult);
-      } catch (uploadError) {
-        console.error('Error during upload or processing:', uploadError);
-        const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
-        setError(`Error: ${errorMessage}`);
-      }
-    } catch (error) {
-      console.error('Processing error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-      setError(`Error: ${errorMessage}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Helper to handle the processed result
-  const handleProcessedResult = (result: any) => {
-    if (result.originalUrl) {
-      const fixedOriginalUrl = fixImageUrl(result.originalUrl);
-      console.log('Setting original URL:', fixedOriginalUrl);
-      setOriginalUrl(fixedOriginalUrl);
-    }
-    
-    // Set the processed URL based on mode
-    if (mode === 'empty' && result.emptyUrl) {
-      const fixedEmptyUrl = fixImageUrl(result.emptyUrl);
-      console.log('Setting empty URL:', fixedEmptyUrl);
-      setProcessedUrl(fixedEmptyUrl);
-    } else if (mode === 'clean' && result.cleanUrl) {
-      const fixedCleanUrl = fixImageUrl(result.cleanUrl);
-      console.log('Setting clean URL:', fixedCleanUrl);
-      setProcessedUrl(fixedCleanUrl);
-    } else {
-      console.log('No processed URL available for mode:', mode);
-      // Instead of offering a test image, treat this as an error
-      setError(`No processed image was returned. Please try again.`);
-      return;
-    }
-  };
+  // Style options
+  const styleOptions = [
+    { id: 'minimal' as DesignStyle, label: 'Classic' },
+    { id: 'modern' as DesignStyle, label: 'Minimalist' },
+    { id: 'botanical' as DesignStyle, label: 'Modern' },
+    { id: 'scandinavian' as DesignStyle, label: 'Botanical' },
+    { id: 'industrial' as DesignStyle, label: 'Industrial' },
+    { id: 'bohemian' as DesignStyle, label: 'Bohemian' },
+  ];
 
-  // Save image to camera roll
-  const saveImage = async () => {
-    try {
-      if (!processedUrl) return;
-      
-      setDownloadingImage(true);
-      
-      // Request permissions
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Needed', 'We need permission to save the image to your camera roll.');
-        setDownloadingImage(false);
-        return;
-      }
-      
-      // Download the image
-      const fileUri = `${FileSystem.cacheDirectory}${mode}-room-${Date.now()}.jpg`;
-      const downloadResult = await FileSystem.downloadAsync(processedUrl, fileUri);
-      
-      // Save to camera roll
-      await MediaLibrary.saveToLibraryAsync(downloadResult.uri);
-      
-      // Success feedback
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success', 'Image saved to your camera roll.');
-    } catch (error) {
-      console.error('Save error:', error);
-      Alert.alert('Error', 'Failed to save the image.');
-    } finally {
-      setDownloadingImage(false);
-    }
-  };
+  // Handle image load
+  const handleImageLoad = useCallback((uri: string) => {
+    Image.getSize(uri, () => {
+      setImageLoaded(true);
+    }, () => {
+      setImageLoaded(true);
+    });
+  }, []);
 
-  // Share image
-  const shareImage = async () => {
-    try {
-      if (!processedUrl) return;
-      
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      
-      await Share.share({
-        url: Platform.OS === 'ios' ? processedUrl : processedUrl,
-        message: `Check out this ${mode === 'empty' ? 'empty' : 'clean'} room I created with Homify!`,
-      });
-    } catch (error) {
-      console.error('Share error:', error);
-      Alert.alert('Error', 'Failed to share the image.');
-    }
-  };
+  // Navigation handlers - removed handleBack, added handleRedo
+  const handleRedo = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    navigation.navigate('PhotoSelection');
+  }, [navigation]);
 
-  // Go back to camera
-  const handleBack = () => {
+  // Handle style selection
+  const handleStyleSelect = useCallback((styleId: DesignStyle) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.goBack();
-  };
+    setSelectedStyle(styleId);
+    // Remove automatic workflow triggering - only update selection state
+  }, []);
 
-  // Try again if error
-  const handleTryAgain = () => {
-    setError(null);
-    processImage();
-  };
+  // Button state logic
+  const isStyleButtonEnabled = useMemo(() => {
+    return !processingState.loading && 
+           selectedStyle && 
+           processingState.emptyRoomUrl && 
+           processingState.stage === 'styling';
+  }, [processingState.loading, selectedStyle, processingState.emptyRoomUrl, processingState.stage]);
 
-  // Render loading state
-  if (loading) {
+  const getStyleButtonText = useMemo(() => {
+    if (processingState.loading) {
+      return 'Processing...';
+    }
+    if (!processingState.emptyRoomUrl) {
+      return 'Processing empty room...';
+    }
+    if (!selectedStyle) {
+      return 'Select a style first';
+    }
+    const selectedStyleOption = styleOptions.find(s => s.id === selectedStyle);
+    return `Apply ${selectedStyleOption?.label} Style`;
+  }, [processingState.loading, processingState.emptyRoomUrl, selectedStyle, styleOptions]);
+
+  // Handle style application (triggered by button)
+  const handleApplyStyle = useCallback(() => {
+    console.log('[PreviewScreen] handleApplyStyle called with:', {
+      isStyleButtonEnabled,
+      selectedStyle,
+      processingState: {
+        loading: processingState.loading,
+        stage: processingState.stage,
+        emptyRoomUrl: processingState.emptyRoomUrl ? 'present' : 'null',
+        jobId: processingState.jobId ? 'present' : 'null'
+      }
+    });
+    
+    if (isStyleButtonEnabled && selectedStyle) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      console.log('[PreviewScreen] Triggering style selection:', selectedStyle);
+      processingActions.handleStyleSelected(selectedStyle);
+    } else {
+      console.warn('[PreviewScreen] Style button not enabled or no style selected');
+    }
+  }, [isStyleButtonEnabled, selectedStyle, processingActions, processingState]);
+
+  // Render content based on state
+  const renderContent = () => {
+    if (processingState.error) {
+      // Check if this is a styling error and we can retry just the style
+      const isStylingError = processingState.stage === 'styling' && 
+                           processingState.emptyRoomUrl && 
+                           selectedStyle;
+      
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>
+            {isStylingError ? 'Style Application Failed' : 'Processing Failed'}
+          </Text>
+          <Text style={styles.errorMessage}>{processingState.error}</Text>
+          
+          <View style={styles.errorButtons}>
+            {isStylingError && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.retryStyleButton]}
+                onPress={processingActions.retryStyleOnly}
+              >
+                <Text style={styles.actionButtonText}>Retry This Style</Text>
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity
+              style={[styles.actionButton, isStylingError && styles.secondaryButton]}
+              onPress={processingActions.handleTryAgain}
+            >
+              <Text style={[styles.actionButtonText, isStylingError && styles.secondaryButtonText]}>
+                Start Over
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    // Main image processing view
     return (
-      <View style={styles.loadingContainer}>
-        <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#7C5C3E" />
-        <Text style={styles.loadingText}>{processingStatus}</Text>
-        <Text style={styles.timeEstimate}>This may take up to 15 seconds</Text>
+      <View style={styles.mainContainer}>
+        {/* Style Selection Section */}
+        <View style={styles.topStyleSection}>
+          <Text style={styles.styleSectionTitle}>Choose Your Style</Text>
+          
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.styleCapsuleScrollContainer}
+            style={styles.styleCapsuleScroll}
+          >
+            {styleOptions.map((style, index) => (
+              <TouchableOpacity
+                key={style.id}
+                style={[
+                  styles.styleCapsule,
+                  selectedStyle === style.id && styles.selectedStyleCapsule,
+                  index === 0 && styles.firstCapsule,
+                  index === styleOptions.length - 1 && styles.lastCapsule,
+                ]}
+                onPress={() => handleStyleSelect(style.id)}
+              >
+                <Text style={[
+                  styles.styleCapsuleText,
+                  selectedStyle === style.id && styles.selectedStyleCapsuleText
+                ]}>
+                  {style.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Image Display Section */}
+        <View style={styles.imageSection}>
+          <View style={styles.imageContainer}>
+            {/* Original Image */}
+            <Image 
+              source={{ uri: imageUri }} 
+              style={styles.image}
+              resizeMode="contain"
+              onLoad={() => handleImageLoad(imageUri)}
+            />
+            
+            {/* Loading Overlay */}
+            {processingState.loading && (
+              <View style={styles.loadingOverlay}>
+                <View style={styles.loadingContent}>
+                  <ActivityIndicator size="large" color="#FFFFFF" />
+                  <Text style={styles.loadingText}>Creating your empty room</Text>
+                  {processingState.processingStatus && (
+                    <Text style={styles.loadingSubtext}>{processingState.processingStatus}</Text>
+                  )}
+                </View>
+              </View>
+            )}
+            
+            {/* Empty Room Result */}
+            {!processingState.loading && processingState.emptyRoomUrl && (
+              <View style={styles.resultOverlay}>
+                <Image 
+                  source={{ uri: processingState.emptyRoomUrl }} 
+                  style={styles.image}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+          </View>
+        </View>
+        
+        {/* Action Buttons Section */}
+        <View style={styles.actionSection}>
+          {/* Redo Button */}
+          <TouchableOpacity
+            style={styles.redoButton}
+            onPress={handleRedo}
+          >
+            <MaterialIcons name="redo" size={20} color="#7C5C3E" />
+            <Text style={styles.redoButtonText}>Choose New Photo</Text>
+          </TouchableOpacity>
+
+          {/* Style Selection Button */}
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              !isStyleButtonEnabled && styles.disabledButton
+            ]}
+            onPress={handleApplyStyle}
+            disabled={!isStyleButtonEnabled}
+          >
+            <Text style={[
+              styles.actionButtonText,
+              !isStyleButtonEnabled && styles.disabledButtonText
+            ]}>
+              {getStyleButtonText}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
-  }
+  };
 
-  // Render error state
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <StatusBar style="light" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.button} onPress={handleTryAgain}>
-          <Text style={styles.buttonText}>Try Again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  useEffect(() => {
+    console.log('[PreviewScreen] Mounted with:', { imageUri, mode });
+  }, []);
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
-          <Text style={styles.headerButtonText}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{mode === 'empty' ? 'Empty Room' : 'Clean Room'}</Text>
-        <View style={styles.headerButtonPlaceholder} />
-      </View>
-      
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Advanced Image Comparison UI */}
-        <View style={styles.comparisonContainer}>
-          {originalUrl && processedUrl ? (
-            <View style={styles.imageContainer}>
-              {/* Original Image (Full Width) */}
-              <Image 
-                source={{ uri: originalUrl }} 
-                style={styles.fullImage} 
-                resizeMode="cover"
-              />
-              
-              {/* Processed Image (Partially Visible) */}
-              <Animated.View 
-                style={[
-                  styles.processedImageContainer, 
-                  { width: sliderPosition.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, imageSize]
-                  }) }
-                ]}
-              >
-                <Image 
-                  source={{ uri: processedUrl }} 
-                  style={styles.processedImage} 
-                  resizeMode="cover"
-                />
-              </Animated.View>
-              
-              {/* Draggable Divider */}
-              <Animated.View
-                style={[
-                  styles.sliderThumb,
-                  {
-                    left: sliderPosition.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, imageSize - 30]
-                    }),
-                    opacity: dividerOpacity.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.7, 1]
-                    })
-                  }
-                ]}
-                {...panResponder.panHandlers}
-              >
-                <View style={styles.sliderThumbLine} />
-              </Animated.View>
-              
-              {/* Left/Right Arrows Overlay */}
-              <Animated.View style={[styles.arrowsContainer, { opacity: arrowsOpacity }]}>
-                <MaterialIcons name="chevron-left" size={32} color="white" />
-                <MaterialIcons name="chevron-right" size={32} color="white" />
-              </Animated.View>
-            </View>
-          ) : (
-            <View style={styles.placeholderImage}>
-              <Text>Images not available</Text>
-            </View>
-          )}
-          
-          {/* Labels */}
-          <View style={styles.labelContainer}>
-            <Text style={styles.labelText}>Original</Text>
-            <Text style={styles.labelText}>{mode === 'empty' ? 'Empty' : 'Clean'}</Text>
-          </View>
-          
-          <Text style={styles.captionText}>
-            Slide to compare the before and after images
+      <SafeAreaView style={styles.innerContainer}>
+        <StatusBar style="dark" />
+        
+        {/* Header - removed back button */}
+        <View style={styles.header}>
+          <View style={styles.placeholder} />
+          <Text style={styles.headerTitle}>
+            {mode === 'empty' ? 'Empty Room' : 'Decluttered Room'}
           </Text>
+          <View style={styles.placeholder} />
         </View>
         
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={[styles.actionButton, !processedUrl && styles.disabledButton]} 
-            onPress={saveImage}
-            disabled={!processedUrl || downloadingImage}
-          >
-            {downloadingImage ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <>
-                <MaterialIcons name="save-alt" size={20} color="#FFFFFF" />
-                <Text style={styles.actionButtonText}>Save</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.primaryActionButton, !processedUrl && styles.disabledButton]} 
-            onPress={shareImage}
-            disabled={!processedUrl}
-          >
-            <MaterialIcons name="share" size={20} color="#FFFFFF" />
-            <Text style={styles.primaryActionButtonText}>Share</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+        {/* Content */}
+        <ScrollView 
+          contentContainerStyle={styles.content}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderContent()}
+        </ScrollView>
+      </SafeAreaView>
     </View>
   );
 };
@@ -429,207 +287,232 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFF9F5',
   },
-  loadingContainer: {
+  innerContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFF9F5',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 20,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#7C5C3E',
-    textAlign: 'center',
-  },
-  timeEstimate: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#8B7E74',
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFF9F5',
-    padding: 20,
-  },
-  errorText: {
-    marginBottom: 20,
-    fontSize: 16,
-    color: '#D33939',
-    textAlign: 'center',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 50,
-    paddingBottom: 16,
-  },
-  headerButton: {
-    padding: 8,
-  },
-  headerButtonText: {
-    fontSize: 24,
-    color: '#7C5C3E',
-    fontWeight: '600',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#7C5C3E',
+    color: '#333333',
   },
-  headerButtonPlaceholder: {
+  placeholder: {
     width: 40,
   },
-  comparisonContainer: {
+  content: {
     flex: 1,
-    paddingTop: 20,
-    paddingHorizontal: 20,
+  },
+  mainContainer: {
+    flex: 1,
+    backgroundColor: '#FFF9F5',
+  },
+  topStyleSection: {
+    paddingVertical: 20,
+    paddingHorizontal: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  styleSectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#7C5C3E',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  styleCapsuleScroll: {
+    flexGrow: 0,
+  },
+  styleCapsuleScrollContainer: {
+    paddingHorizontal: 5,
+    alignItems: 'center',
+  },
+  styleCapsule: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 4,
+    minWidth: 70,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  selectedStyleCapsule: {
+    backgroundColor: '#7C5C3E',
+    borderColor: '#7C5C3E',
+    shadowColor: '#7C5C3E',
+    shadowOpacity: 0.3,
+  },
+  styleCapsuleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666666',
+    textAlign: 'center',
+  },
+  selectedStyleCapsuleText: {
+    color: '#FFFFFF',
+  },
+  firstCapsule: {
+    marginLeft: 8,
+  },
+  lastCapsule: {
+    marginRight: 8,
+  },
+  imageSection: {
+    flex: 1,
+    backgroundColor: '#F8F8F8',
+    justifyContent: 'center',
     alignItems: 'center',
   },
   imageContainer: {
-    width: width - 40,
-    height: width - 40,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#F5F5F5',
+    flex: 1,
+    width: '100%',
     position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  fullImage: {
+  image: {
     width: '100%',
     height: '100%',
+    maxWidth: '100%',
+    maxHeight: '100%',
   },
-  processedImageContainer: {
+  loadingOverlay: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    height: '100%',
-    overflow: 'hidden',
-  },
-  processedImage: {
-    width: width - 40,
-    height: '100%',
-  },
-  sliderThumb: {
-    position: 'absolute',
-    top: 0,
-    height: '100%',
-    width: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sliderThumbLine: {
-    width: 3,
-    height: '100%',
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  arrowsContainer: {
-    position: 'absolute',
-    top: '50%',
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    transform: [{ translateY: -16 }],
-  },
-  labelContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 8,
-    paddingHorizontal: 8,
-  },
-  labelText: {
-    fontSize: 14,
-    color: '#7C5C3E',
-    fontWeight: '600',
-  },
-  captionText: {
-    fontSize: 14,
-    color: '#8B7E74',
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  actionButtons: {
-    flexDirection: 'row',
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
-    width: '100%',
-    marginBottom: 30,
+    alignItems: 'center',
+  },
+  loadingContent: {
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginTop: 15,
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    marginTop: 8,
+    textAlign: 'center',
+    opacity: 0.9,
+  },
+  resultOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  actionSection: {
+    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
   },
   actionButton: {
+    padding: 16,
+    borderRadius: 25,
+    backgroundColor: '#7C5C3E',
+    alignItems: 'center',
+    width: '100%',
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#E0E0E0',
+  },
+  disabledButtonText: {
+    color: '#999999',
+  },
+  redoButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    marginHorizontal: 6,
-    backgroundColor: '#E0D5C9',
+    padding: 12,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  primaryActionButton: {
-    backgroundColor: '#7C5C3E',
-  },
-  actionButtonText: {
-    marginLeft: 8,
+  redoButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#7C5C3E',
-  },
-  primaryActionButtonText: {
     marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
-  placeholderImage: {
-    width: width - 40,
-    height: width - 40,
-    borderRadius: 12,
-    backgroundColor: '#E0D5C9',
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 10,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  errorButtons: {
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  button: {
+  retryStyleButton: {
     backgroundColor: '#7C5C3E',
-    paddingVertical: 15,
-    borderRadius: 30,
-    alignItems: 'center',
-    marginBottom: 16,
-    width: '80%',
+    padding: 12,
+    borderRadius: 20,
+    marginHorizontal: 10,
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backButton: {
-    paddingVertical: 15,
-    borderRadius: 30,
-    alignItems: 'center',
+  secondaryButton: {
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    borderRadius: 20,
+    marginHorizontal: 10,
     borderWidth: 1,
     borderColor: '#7C5C3E',
-    width: '80%',
   },
-  backButtonText: {
+  secondaryButtonText: {
     color: '#7C5C3E',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disabledButton: {
-    backgroundColor: '#CCCCCC',
-    opacity: 0.7,
   },
 });
 

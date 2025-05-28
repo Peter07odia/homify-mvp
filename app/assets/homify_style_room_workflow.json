@@ -1,0 +1,339 @@
+{
+  "name": "Homify Style Room Workflow v1",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/rooms/styled/{{ $('Prepare Style').item.json.jobId }}.jpg",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "7132903e-3c1b-45ea-9864-f2a612c2de9f",
+      "name": "Upload Styled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "w92jWcsgmROGu4Wf",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "style-room",
+        "authentication": "basicAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "fc0b48af-1891-4674-bfad-5bb6a04d2d46",
+      "name": "Webhook Style",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        0
+      ],
+      "webhookId": "6c9eefba-a827-4a6b-9a81-b39044250277",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "mEvGFZ2GWNvZ5aQE",
+          "name": "homify App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/rooms/empty/{{ $('Prepare Style').item.json.jobId }}.jpg",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "id": "e9882781-6538-4baa-a985-0989c09d874e",
+      "name": "Download Empty",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        280,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "w92jWcsgmROGu4Wf",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/edits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "dall-e-2"
+            },
+            {
+              "name": "prompt",
+              "value": "=Edit this empty room image to {{ $('Prepare Style').item.json.stylePrompt }} Keep the room's original layout, walls, windows, and architectural features exactly the same. Only add furniture, decorations, and styling elements that match the requested design style. Maintain realistic lighting and perspective."
+            },
+            {
+              "name": "n",
+              "value": "1"
+            },
+            {
+              "name": "size",
+              "value": "1024x1024"
+            },
+            {
+              "name": "response_format",
+              "value": "b64_json"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "04576124-82bf-4476-9f44-467ed182feb6",
+      "name": "OpenAI Apply Style",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        480,
+        0
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "6Vi7ylWe9vVJqtj2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "data[0].b64_json",
+        "options": {}
+      },
+      "id": "1fabe673-9b96-4e20-ac74-2e9852e68467",
+      "name": "Convert to File Styled",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "room_jobs",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare Style').item.json.jobId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "done"
+            },
+            {
+              "fieldId": "styled_path",
+              "fieldValue": "=styled/{{ $('Prepare Style').item.json.jobId }}.jpg"
+            },
+            {
+              "fieldId": "applied_style",
+              "fieldValue": "={{ $('Prepare Style').item.json.styleId }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ $now() }}"
+            }
+          ]
+        }
+      },
+      "id": "f544d10e-e936-4443-95c0-2e3aaea3caf5",
+      "name": "Update Style Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "w92jWcsgmROGu4Wf",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "165485e3-2582-4aed-b966-dd09db454815",
+      "name": "Respond Style",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "jobId",
+              "value": "={{ $json.body.jobId }}"
+            },
+            {
+              "name": "styleId",
+              "value": "={{ $json.body.styleId }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $json.body.timestamp }}"
+            },
+            {
+              "name": "stylePrompt",
+              "value": "={{ $json.body.styleId === 'minimal' ? 'add minimal design elements: clean lines furniture, neutral colors (white, beige, gray), simple geometric furniture, and uncluttered spaces with minimal decorations' : $json.body.styleId === 'modern' ? 'add modern contemporary elements: sleek furniture with bold shapes, metallic accents, innovative materials, and contemporary art pieces' : $json.body.styleId === 'bohemian' ? 'add bohemian elements: rich warm colors, layered textiles, patterned rugs, eclectic furniture mix, plants, and artistic decorations' : $json.body.styleId === 'scandinavian' ? 'add Scandinavian elements: light wood furniture, cozy textiles, neutral colors, hygge accessories, and natural materials' : $json.body.styleId === 'industrial' ? 'add industrial elements: exposed metal fixtures, dark colors, raw textures, leather furniture, and vintage industrial decorations' : $json.body.styleId === 'botanical' ? 'add botanical elements: abundant green plants, natural wood furniture, earth tones, and nature-inspired decorations' : $json.body.styleId === 'farmhouse' ? 'add farmhouse elements: rustic wood furniture, vintage accessories, warm earth tones, and cozy country-style decorations' : $json.body.styleId === 'midcentury' ? 'add mid-century modern elements: clean-lined furniture, warm wood tones, retro accessories, and vintage 1950s-60s style pieces' : 'add modern interior design elements' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0ffe9c06-2545-4418-bc06-c3062ad2ce7d",
+      "name": "Prepare Style",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        80,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Upload Styled": {
+      "main": [
+        [
+          {
+            "node": "Update Style Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Style": {
+      "main": [
+        [
+          {
+            "node": "Prepare Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Empty": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Apply Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Apply Style": {
+      "main": [
+        [
+          {
+            "node": "Convert to File Styled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File Styled": {
+      "main": [
+        [
+          {
+            "node": "Upload Styled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Style Status": {
+      "main": [
+        [
+          {
+            "node": "Respond Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Style": {
+      "main": [
+        [
+          {
+            "node": "Download Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a99de4d7bd77d3e09a508240bc33ec3c3132b195216adccd70933e9d8db1159c"
+  }
+} 

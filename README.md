@@ -1,181 +1,290 @@
-# Homify MVP
+# Homify MVP - AI-Powered Room Visualization
 
-Transform any room with AI-powered empty room visualization.
+> Transform any room with AI-powered visualization. Upload a photo, get an empty room, then apply design styles.
 
-## Overview
+[![React Native](https://img.shields.io/badge/React%20Native-0.79.2-blue.svg)](https://reactnative.dev/)
+[![Expo](https://img.shields.io/badge/Expo-53.0.9-000020.svg)](https://expo.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3.3-blue.svg)](https://www.typescriptlang.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-2.38.4-green.svg)](https://supabase.com/)
 
-Homify MVP is a mobile application that allows users to:
-
-1. Take a photo of their room
-2. Process it with AI to remove all furniture (Empty Room feature)
-3. Visualize how the room would look empty
-4. (Premium) Reimagine their room with different furniture styles (Clean feature)
-
-## Current Status
-
-✅ **Edge Functions**: Implemented Supabase edge function for image processing  
-✅ **Storage**: Configured Supabase storage buckets for original and processed images  
-✅ **Database**: Set up room_jobs table for tracking processing status  
-✅ **Mobile App**: Implemented image upload, processing, and result viewing  
-✅ **Processing Workflow**: Integrated with n8n and OpenAI for image transformations  
-✅ **UI Enhancement**: Added fluid before/after comparison with interactive slider  
-✅ **Aspect Ratio**: Images maintain their original aspect ratio through processing  
-✅ **Storage Integration**: Successfully storing and retrieving images from Supabase  
-🔄 **Premium Features**: Clean mode implementation in progress  
-
-## Architecture
-
-```
-┌─────────────┐           ┌───────────────┐          ┌─────────────┐          ┌───────────────┐
-│             │           │               │          │             │          │               │
-│  Mobile App │ ───POST──►│ Supabase Edge │ ──POST──►│ n8n Workflow│ ──POST──►│  OpenAI       │
-│  (Expo)     │           │  Function     │          │             │          │  GPT-Image-1  │
-│             │           │               │          │             │          │               │
-└─────────────┘           └───────────────┘          └─────────────┘          └───────────────┘
-       ▲                          │                         │                         │
-       │                          │                         │                         │
-       │                          ▼                         │                         ▼
-       │                 ┌────────────────┐                 │                ┌────────────────┐
-       │                 │                │                 │                │                │
-       │                 │  Supabase      │                 │                │  Processed     │
-       │                 │  Storage       │◄────────────────┘                │  Images        │
-       │                 │  (original)    │                                  │                │
-       │                 │                │                                  │                │
-       │                 └────────────────┘                                  └────────────────┘
-       │                          │                                                  │
-       │                          │                                                  │
-       │                          ▼                                                  │
-       │                 ┌────────────────┐                                          │
-       │                 │                │                                          │
-       │                 │  Supabase      │◄─────────────────────────────────────────┘
-       │                 │  Storage       │
-       └─────────────────│  (empty/       │
-                         │   clean)       │
-                         │                │
-                         └────────────────┘
-```
-
-## Features
-
-- **Empty Room**: Remove all furniture and decor from a room photo
-- **Clean Room** (Premium): Keep furniture but reimagine the style and decor
-- **Interactive Before/After Comparison**: Draggable divider with visual cues for comparing original and processed images
-- **Aspect Ratio Preservation**: Maintains the original image's aspect ratio throughout processing
-- **Progress Tracking**: Real-time status updates during processing
-- **Save & Share**: Save processed images to camera roll or share directly
-
-## Key Improvements
-
-Recent improvements to the application include:
-
-1. **Enhanced Image Comparison UI**: 
-   - Replaced basic slider with intuitive draggable comparison view
-   - Added visual indicators to guide user interaction
-   - Implemented smooth animations for fluid transitions
-
-2. **Image Aspect Ratio Preservation**:
-   - Capturing original image dimensions during upload
-   - Passing dimensions to GPT-Image-1 through n8n workflow
-   - Dynamically calculating optimal dimensions while preserving aspect ratio
-
-3. **Integration with Supabase Storage**:
-   - Successfully storing and retrieving images
-   - Properly handling image URLs and formats
-
-## Implementation Details
-
-### Edge Function
-
-The project uses a Supabase edge function (`empty-room`) to:
-- Handle image uploads from the mobile app
-- Store the original image in Supabase storage
-- Create a job record in the database
-- Extract and pass image dimensions to maintain aspect ratio
-- Trigger the n8n workflow for AI processing
-- Provide a status endpoint for checking job progress
-
-### Storage Structure
-
-- **Original Images**: `rooms/original/{timestamp}.jpg`
-- **Empty Room Results**: `rooms/empty/{jobId}.jpg`
-- **Clean Results**: `rooms/clean/{jobId}.jpg`
-
-### Database Schema
-
-The `room_jobs` table tracks the status of each processing job:
-- `id`: Unique job identifier
-- `status`: Current status (processing, done, error)
-- `original_path`: Path to the original image
-- `empty_path`: Path to the empty room result (if available)
-- `clean_path`: Path to the clean result (if available)
-- `created_at`: Job creation timestamp
-- `updated_at`: Last status update timestamp
-
-## Setup
-
-For detailed setup instructions, see [SETUP_GUIDE.md](./SETUP_GUIDE.md)
-
-For implementation details about specific features, see [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md)
-
-### Quick Start
-
-1. Configure Supabase:
-   - Create project
-   - Set up storage buckets (rooms/original, rooms/empty, rooms/clean)
-   - Deploy edge function
-   - Set up database tables
-
-2. Configure n8n:
-   - Create webhook trigger
-   - Set up OpenAI connection
-   - Create workflow for image processing
-   - Configure dynamic image sizing
-   - Set up error handling
-
-3. Configure Mobile App:
-   - Update .env with Supabase and n8n credentials
-   - Test image upload and processing
-   - Implement UI for viewing results
-
-## Environment Variables
-
-```
-# Supabase Configuration
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-
-# n8n Webhook
-N8N_WEBHOOK_URL=https://your-n8n-instance.cloud/webhook/empty-room
-```
-
-## Development
+## 🚀 Quick Start
 
 ```bash
 # Install dependencies
 npm install
 
-# Start development server
+# Start the development server
 npm start
 
-# Run on iOS
-npm run ios
-
-# Run on Android
-npm run android
+# Run on specific platform
+npm run ios     # iOS simulator
+npm run android # Android emulator
+npm run web     # Web browser
 ```
 
-## Prompts for AI Image Processing
+## 🏗️ Architecture Overview
 
-### Empty Room
+### Two-Stage Processing System
+1. **Stage 1**: Empty Room Generation - Removes furniture and decor
+2. **Stage 2**: Style Application - Applies selected design styles
+
+### Navigation Flow
 ```
-Remove all movable furniture and decor from this room. Keep walls, floor, windows, doors, and built-in fixtures unchanged. Maintain the same lighting, shadows, and perspective.
+Splash → Onboarding → PhotoSelection → Camera/Gallery → 
+PhotoConfirmation → Preview (Stage 1) → StyledRoom (Stage 2)
 ```
 
-### Clean Room (Premium)
+### Tech Stack
+
+**Frontend**
+- **React Native**: 0.79.2 - Cross-platform mobile framework
+- **Expo**: 53.0.9 - Development platform and runtime
+- **TypeScript**: 5.3.3 - Type safety and developer experience
+- **React Navigation**: 6.1.9 - Navigation system
+
+**Backend & Infrastructure**
+- **Supabase**: Backend-as-a-service (database, storage, authentication)
+- **n8n**: Workflow automation for image processing
+- **OpenAI DALL-E 2**: AI image editing via n8n workflows
+- **Deno**: Runtime for Supabase Edge Functions
+
+**Image Processing**
+- **expo-camera**: Camera functionality
+- **expo-image-picker**: Gallery access
+- **expo-image-manipulator**: Image manipulation
+- **expo-file-system**: File operations
+
+**UI/UX**
+- **@react-native-community/slider**: Image comparison slider
+- **expo-haptics**: Tactile feedback
+- **react-native-safe-area-context**: Safe area handling
+
+## 📁 Project Structure
+
 ```
-Reimagine this room with modern, stylish furniture while maintaining the same general layout. Enhance the aesthetic quality with professional interior design elements.
+homify-mvp/
+├── app/
+│   ├── App.tsx                      # Main app entry point
+│   ├── navigation/index.tsx         # Navigation configuration
+│   ├── screens/                     # Screen components
+│   │   ├── SplashScreen.tsx
+│   │   ├── OnboardingScreen.tsx
+│   │   ├── PhotoSelectionScreen.tsx
+│   │   ├── CameraScreen.tsx
+│   │   ├── PhotoConfirmationScreen.tsx
+│   │   ├── PreviewScreen.tsx        # Main processing screen
+│   │   ├── StyledRoomScreen.tsx     # Final result display
+│   │   └── StyleSelectionDemo.tsx   # Style selection UI
+│   ├── components/                  # Reusable components
+│   │   ├── ImageComparison.tsx      # Before/after slider
+│   │   ├── AnimatedPreloader.tsx    # Loading animations
+│   │   └── ProcessingError.tsx      # Error handling
+│   ├── services/                    # Business logic
+│   │   ├── roomService.ts           # Core image processing API
+│   │   └── styleService.ts          # Style management
+│   ├── hooks/                       # Custom React hooks
+│   │   ├── useImageProcessing.ts    # Processing state management
+│   │   └── useImageActions.ts       # Image action handlers
+│   ├── lib/
+│   │   └── supabase.ts             # Supabase client configuration
+│   └── assets/                      # Static assets and workflows
+│       ├── homify_update.json       # n8n empty room workflow
+│       └── homify_style_room_workflow.json # n8n style workflow
+├── supabase/
+│   ├── functions/
+│   │   └── empty-room/              # Edge function for image processing
+│   ├── migrations/                  # Database schema
+│   └── config.toml                  # Supabase configuration
+├── types/
+│   └── env.d.ts                    # Environment variable types
+├── scripts/
+│   └── optimize-images.js          # Image optimization utility
+└── logs/                           # Application logs (cleaned)
 ```
 
-## License
+## 🎨 Available Design Styles
 
-MIT 
+- **Minimal**: Clean, simple, uncluttered
+- **Modern**: Sleek, current, innovative
+- **Bohemian**: Eclectic, relaxed, colorful
+- **Scandinavian**: Light, airy, functional
+- **Industrial**: Raw, edgy, utilitarian
+- **Botanical**: Natural, green, tranquil
+- **Farmhouse**: Rustic, cozy, traditional
+- **Mid-Century**: Retro, clean lines, organic
+
+## 🔄 Processing Workflow
+
+1. **Image Upload** → Supabase Storage (`/rooms/original/`)
+2. **Job Creation** → Database record in `room_jobs` table
+3. **n8n Trigger** → Webhook call to n8n workflow
+4. **AI Processing** → OpenAI DALL-E 2 via n8n
+5. **Result Storage** → Processed images saved to Supabase Storage
+6. **Status Updates** → Database updates with result URLs
+
+### Database Schema
+
+```sql
+room_jobs (
+  id: uuid PRIMARY KEY,
+  original_path: text,
+  empty_path: text,
+  styled_path: text,
+  applied_style: text,
+  status: text,
+  created_at: timestamp,
+  updated_at: timestamp
+)
+```
+
+## ⚙️ Environment Setup
+
+### Required Environment Variables
+
+```bash
+# Supabase Configuration
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# n8n Webhook URLs
+N8N_WEBHOOK_URL=your_n8n_empty_room_webhook
+STYLE_WEBHOOK_URL=your_n8n_style_webhook
+```
+
+### Supabase Setup
+
+1. Create a new Supabase project
+2. Run migrations: `npx supabase db push`
+3. Create storage bucket: `rooms`
+4. Set up storage folders: `original/`, `empty/`, `styled/`
+5. Deploy edge functions: `npx supabase functions deploy empty-room`
+
+### n8n Workflow Setup
+
+1. Import `homify_update.json` for empty room processing
+2. Import `homify_style_room_workflow.json` for style application
+3. Configure OpenAI API credentials in n8n
+4. Set webhook authentication in Supabase secrets
+
+## 🧪 Development Scripts
+
+```bash
+npm start           # Start Expo development server
+npm run reset       # Clear cache and restart
+npm run clean       # Clear Metro cache
+npm run prod        # Run in production mode
+npm run fix-deps    # Fix dependency issues
+```
+
+## 🚢 Deployment
+
+### Supabase Production
+
+```bash
+# Link to production project
+npx supabase link --project-ref your-project-ref
+
+# Deploy edge functions
+npx supabase functions deploy empty-room
+
+# Set production secrets
+npx supabase secrets set N8N_WEBHOOK_URL=your_production_webhook
+npx supabase secrets set N8N_WEBHOOK_AUTH_USERNAME=your_username
+npx supabase secrets set N8N_WEBHOOK_AUTH_PASSWORD=your_password
+```
+
+### Expo/EAS Build
+
+```bash
+# Build for production
+eas build --platform all
+
+# Submit to app stores
+eas submit
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Image Processing Fails**
+- Check n8n webhook authentication
+- Verify Supabase storage permissions
+- Check OpenAI API credits
+
+**App Crashes on Startup**
+- Clear Expo cache: `npm run reset`
+- Check environment variables
+- Verify all dependencies: `npm run fix-deps`
+
+**Navigation Issues**
+- Check React Navigation version compatibility
+- Verify screen component exports
+
+### Debug Commands
+
+```bash
+# Clear all caches
+npm run clear-cache
+
+# Check dependencies
+npm run fix-deps
+
+# View detailed logs
+npx expo start --clear
+```
+
+## 📱 Features
+
+- ✅ Camera and gallery photo capture
+- ✅ Real-time image processing with AI
+- ✅ Interactive before/after comparison slider
+- ✅ 8 distinct design style options
+- ✅ Two-stage processing (empty → styled)
+- ✅ Haptic feedback and smooth animations
+- ✅ Error handling and retry mechanisms
+- ✅ Responsive UI for all screen sizes
+
+## 🔗 API Reference
+
+### Room Processing API
+
+```typescript
+// Upload image for processing
+uploadRoomImage(imageUri: string, mode: 'empty' | 'clean'): Promise<string>
+
+// Check processing status
+checkJobStatus(jobId: string): Promise<RoomJobStatus>
+
+// Apply style to empty room
+applyStyleToRoom(jobId: string, styleId: DesignStyle): Promise<void>
+```
+
+### Style Management API
+
+```typescript
+// Available styles
+DESIGN_STYLES: DesignStyle[]
+
+// Set user preference
+setUserPreferredStyle(styleId: DesignStyle): void
+
+// Get style-specific loading messages
+getStyleSpecificLoadingMessages(styleId: DesignStyle, mode: ProcessingMode): string[]
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+**Built with ❤️ using React Native, Expo, Supabase, and n8n** 

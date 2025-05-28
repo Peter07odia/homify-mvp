@@ -1,0 +1,72 @@
+{
+  "expo": {
+    "name": "Homify",
+    "slug": "homify-mvp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./app/assets/logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./app/assets/splashscreen.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF9F5"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Homify to access your camera for AR room scanning and photo capture."
+      },
+      "bundleIdentifier": "com.anonymous.homify-mvp"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./app/assets/logo.png",
+        "backgroundColor": "#FFF9F5"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./app/assets/logo.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Homify to access your camera to take photos of your room and perform AR room scanning."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Homify to access your photos to save processed images."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Homify to access your photo library to pick images of your room."
+        }
+      ],
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow Homify to access your camera for AR room scanning and photo capture.",
+          "enableMicrophonePermission": false
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "74148a20-7762-4591-a375-d212aeb25641"
+      }
+    }
+  }
+}

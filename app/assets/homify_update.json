@@ -1,0 +1,570 @@
+{
+  "name": "Homify Image Editor v2",
+  "nodes": [
+    {
+      "id": "0587fce5-5d82-471f-acd8-15f4c95cadeb",
+      "name": "Webhook Empty",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        -40
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "empty-room",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "e838ac01-50c2-4091-92d2-02c922bc2d4a",
+      "name": "Prepare Empty",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        -40
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "jobId",
+              "value": "={{ $json.body.jobId }}"
+            },
+            {
+              "name": "imageUrl",
+              "value": "={{ $json.body.imageUrl }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $json.body.timestamp }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9dcac131-0951-4bb7-b754-a836ba9da591",
+      "name": "Download Original",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -160,
+        -40
+      ],
+      "parameters": {
+        "url": "={{ $json.imageUrl }}"
+      }
+    },
+    {
+      "id": "33b57d6b-213d-41fd-b8e6-5e8955a9e673",
+      "name": "OpenAI Edit Empty",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        60,
+        -40
+      ],
+      "credentials": {
+        "openAiApi": {
+          "name": "openAiApi"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/edits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "dall-e-2"
+            },
+            {
+              "name": "prompt",
+              "value": "Remove all movable furniture and decor from this room. Keep architectural elements unchanged."
+            },
+            {
+              "name": "n",
+              "value": "1"
+            },
+            {
+              "name": "size",
+              "value": "1024x1024"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "image[]",
+              "inputDataFieldName": "data"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "77a0e165-bc29-4535-9531-a997cff2a164",
+      "name": "Convert to File Empty",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        260,
+        -40
+      ],
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "data[0].b64_json"
+      }
+    },
+    {
+      "id": "3fd72b33-fc45-4d03-a709-05f9084ec7e0",
+      "name": "Upload Empty",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        -40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $env.SUPABASE_URL_HOST }}/storage/v1/object/rooms/empty/{{ $('Prepare Empty').item.json.jobId }}.jpg?upsert=true",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data"
+      }
+    },
+    {
+      "id": "f4d3f8f8-ffeb-4dfa-94e4-80b44b835044",
+      "name": "Update Empty Path",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        680,
+        -40
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Prod"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "tableId": "room_jobs",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare Empty').item.json.jobId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "done"
+            },
+            {
+              "fieldId": "empty_path",
+              "fieldValue": "=empty/{{ $('Prepare Empty').item.json.jobId }}.jpg"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "11faa36e-93b8-4b5c-a074-a4b37b9f9c7e",
+      "name": "Respond Empty",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        880,
+        -40
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "259e1609-8e88-4223-8ff7-5c1883bd69ea",
+      "name": "Webhook Style",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        220
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "style-room",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "d2476e42-cb3a-46eb-8981-b4d436a815cb",
+      "name": "Prepare Style",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        220
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "jobId",
+              "value": "={{ $json.body.jobId }}"
+            },
+            {
+              "name": "stylePrompt",
+              "value": "={{ $json.body.prompt }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "35b3830c-51e4-40fb-9b9a-f9d1db762cd9",
+      "name": "Download Last Empty",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -160,
+        220
+      ],
+      "parameters": {
+        "url": "=https://{{ $env.SUPABASE_URL_HOST }}/storage/v1/object/rooms/empty/{{ $('Prepare Style').item.json.jobId }}.jpg"
+      }
+    },
+    {
+      "id": "481182d6-b7e5-4e7a-974d-7bb835a63e89",
+      "name": "OpenAI Edit Style",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        60,
+        220
+      ],
+      "credentials": {
+        "openAiApi": {
+          "name": "openAiApi"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/edits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "dall-e-2"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $('Prepare Style').item.json.stylePrompt }}"
+            },
+            {
+              "name": "n",
+              "value": "1"
+            },
+            {
+              "name": "size",
+              "value": "1024x1024"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "image[]",
+              "inputDataFieldName": "data"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0a7e7dd6-3a80-4219-b1ce-b15105ca79c8",
+      "name": "Convert to File Style",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        260,
+        220
+      ],
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "data[0].b64_json"
+      }
+    },
+    {
+      "id": "8573f111-c2ea-44d5-9406-f416cd85f33a",
+      "name": "Upload Style",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        220
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Prod"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $env.SUPABASE_URL_HOST }}/storage/v1/object/rooms/styled/{{ $('Prepare Style').item.json.jobId }}.jpg?upsert=true",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data"
+      }
+    },
+    {
+      "id": "5a83a148-7067-4943-a4f2-3033d8539547",
+      "name": "Update Styled Path",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        680,
+        220
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Prod"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "tableId": "room_jobs",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare Style').item.json.jobId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "done"
+            },
+            {
+              "fieldId": "styled_path",
+              "fieldValue": "=styled/{{ $('Prepare Style').item.json.jobId }}.jpg"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c85fcc3e-9ecc-4aad-85d7-15a911f81224",
+      "name": "Respond Style",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        880,
+        220
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Webhook Empty": {
+      "main": [
+        [
+          {
+            "node": "Prepare Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Empty": {
+      "main": [
+        [
+          {
+            "node": "Download Original",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Original": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Edit Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Edit Empty": {
+      "main": [
+        [
+          {
+            "node": "Convert to File Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File Empty": {
+      "main": [
+        [
+          {
+            "node": "Upload Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Empty": {
+      "main": [
+        [
+          {
+            "node": "Update Empty Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Empty Path": {
+      "main": [
+        [
+          {
+            "node": "Respond Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Style": {
+      "main": [
+        [
+          {
+            "node": "Prepare Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Style": {
+      "main": [
+        [
+          {
+            "node": "Download Last Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Last Empty": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Edit Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Edit Style": {
+      "main": [
+        [
+          {
+            "node": "Convert to File Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File Style": {
+      "main": [
+        [
+          {
+            "node": "Upload Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Style": {
+      "main": [
+        [
+          {
+            "node": "Update Styled Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Styled Path": {
+      "main": [
+        [
+          {
+            "node": "Respond Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

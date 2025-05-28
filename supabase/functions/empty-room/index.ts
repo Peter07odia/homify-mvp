@@ -264,9 +264,28 @@ serve(async (req: Request) => {
       const url = new URL(req.url)
       const jobId = url.pathname.split('/').pop()
 
-      if (!jobId) {
+      console.log('GET request - URL pathname:', url.pathname)
+      console.log('GET request - extracted jobId:', jobId)
+
+      if (!jobId || jobId === 'empty-room') {
         return new Response(
-          JSON.stringify({ error: 'Job ID is required' }),
+          JSON.stringify({ 
+            error: 'Job ID is required in the URL path',
+            usage: 'GET /functions/v1/empty-room/{jobId}',
+            received: url.pathname
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        )
+      }
+
+      // Validate UUID format (basic check)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      if (!uuidRegex.test(jobId)) {
+        return new Response(
+          JSON.stringify({ 
+            error: 'Invalid job ID format. Expected UUID.',
+            received: jobId
+          }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
         )
       }
@@ -280,8 +299,13 @@ serve(async (req: Request) => {
 
       if (jobError) {
         console.error('Job query error:', jobError)
+        console.error('JobId that failed:', jobId)
         return new Response(
-          JSON.stringify({ error: 'Failed to get job status' }),
+          JSON.stringify({ 
+            error: 'Failed to get job status',
+            details: jobError.message,
+            jobId: jobId
+          }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
       }
@@ -326,6 +350,15 @@ serve(async (req: Request) => {
           .getPublicUrl(jobData.clean_path)
         
         response.cleanUrl = cleanUrl
+      }
+
+      if (jobData.styled_path) {
+        const { data: { publicUrl: styledUrl } } = supabaseClient
+          .storage
+          .from('rooms')
+          .getPublicUrl(jobData.styled_path)
+        
+        response.styledUrl = styledUrl
       }
 
       return new Response(

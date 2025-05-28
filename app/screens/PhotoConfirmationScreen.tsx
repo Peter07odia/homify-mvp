@@ -6,8 +6,8 @@ import {
   TouchableOpacity, 
   Text, 
   Dimensions,
-  StatusBar
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
@@ -23,12 +23,12 @@ type PhotoConfirmationScreenRouteProp = RouteProp<
   'PhotoConfirmation'
 >;
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const PhotoConfirmationScreen = () => {
   const navigation = useNavigation<PhotoConfirmationScreenNavigationProp>();
   const route = useRoute<PhotoConfirmationScreenRouteProp>();
-  const { imageUri } = route.params;
+  const { imageUri, isFromCamera = true } = route.params;
 
   const handleRetake = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -36,14 +36,27 @@ const PhotoConfirmationScreen = () => {
   };
 
   const handleUsePhoto = () => {
+    console.log('[PhotoConfirmationScreen] FORCE NAVIGATION: Going directly to Preview with empty mode');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Navigate to the room styling options screen
-    navigation.navigate('RoomStyleOptions', { photoUri: imageUri });
+    
+    // FORCE NAVIGATION RESET - Clear entire navigation stack and go directly to Preview
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'Preview',
+          params: { 
+            imageUri: imageUri,
+            mode: 'empty'
+          }
+        }
+      ]
+    });
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       
       {/* Header */}
       <View style={styles.header}>
@@ -56,7 +69,11 @@ const PhotoConfirmationScreen = () => {
       
       {/* Image Preview */}
       <View style={styles.imageContainer}>
-        <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />
+        <Image 
+          source={{ uri: imageUri }} 
+          style={styles.image} 
+          resizeMode="contain" 
+        />
       </View>
       
       {/* Action Buttons */}
@@ -112,12 +129,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 20,
+    backgroundColor: '#E0D5C9',
   },
   image: {
-    width: width - 40,
-    height: width - 40,
-    borderRadius: 12,
+    width: width,
+    height: height - 200, // Adjust to leave space for buttons and header
   },
   buttonsContainer: {
     paddingHorizontal: 20,

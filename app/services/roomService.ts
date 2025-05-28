@@ -2,21 +2,25 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Image } from 'react-native';
-import { EDGE_FUNCTION_URL } from '../lib/supabase';
+import { EDGE_FUNCTION_URL, SUPABASE_ANON_KEY_REF } from '../lib/supabase';
 
-export type ProcessingMode = 'empty' | 'clean';
+// Development flag to use mock service
+const USE_MOCK_SERVICE = false; // Set to true for testing without backend
+
+export type ProcessingMode = 'empty' | 'clean' | 'styling';
 
 export interface RoomJobResponse {
   jobId: string;
-  status: 'processing' | 'done' | 'error';
+  status: 'processing' | 'done' | 'error' | 'empty_complete' | 'style_error';
   message?: string;
 }
 
 export interface RoomJobStatus {
-  status: 'processing' | 'done' | 'error';
+  status: 'processing' | 'done' | 'error' | 'empty_complete' | 'style_error';
   originalUrl?: string;
   emptyUrl?: string;
   cleanUrl?: string;
+  styledUrl?: string;
   createdAt?: string;
   updatedAt?: string;
   message?: string;
@@ -181,70 +185,44 @@ export const uploadRoomImage = async (
  */
 export const checkJobStatus = async (jobId: string): Promise<RoomJobStatus> => {
   try {
-    console.log(`Checking job status for ID: ${jobId}`);
     const requestUrl = `${EDGE_FUNCTION_URL}/${jobId}`;
-    console.log(`Making GET request to: ${requestUrl}`);
     
     const response = await fetch(requestUrl, {
       method: 'GET',
       headers: {
-        'Accept': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY_REF}`,
+        'Content-Type': 'application/json',
       },
     });
-    
-    console.log(`Status check response status: ${response.status}`);
-    
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Status check failed: ${response.status} - ${errorText}`);
-      throw new Error(`API error: ${response.status} - ${errorText}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    const responseData = await response.json();
     
-    let responseData;
-    try {
-      responseData = await response.json();
-    } catch (parseError) {
-      console.error('Error parsing JSON response:', parseError);
-      const responseText = await response.text();
-      console.error('Raw response text:', responseText);
-      throw new Error(`Invalid JSON in response: ${responseText.substring(0, 100)}...`);
+    console.log('[checkJobStatus] Raw response data:', JSON.stringify(responseData, null, 2));
+    
+    // Fix any malformed URLs
+    if (responseData.emptyUrl) {
+      responseData.emptyUrl = fixImageUrl(responseData.emptyUrl);
     }
-    
-    console.log(`Job status response: ${JSON.stringify(responseData)}`);
-    
-    // HACK: If your n8n workflow is setting the empty_path but the edge function isn't 
-    // returning the emptyUrl, try to manually construct it here.
-    if (responseData.status === 'done' && !responseData.emptyUrl && !responseData.cleanUrl) {
-      console.log('No URLs in response, trying to manually construct the URL');
-      
-      // Check if we're in a Supabase environment (assuming your URL format)
-      if (EDGE_FUNCTION_URL.includes('supabase.co')) {
-        // Parse out the project ID from the edge function URL
-        const projectId = EDGE_FUNCTION_URL.split('https://')[1].split('.supabase.co')[0];
-        
-        if (projectId) {
-          const baseStorageUrl = `https://${projectId}.supabase.co/storage/v1/object/public/rooms/`;
-          
-          // Manually construct the empty URL
-          responseData.emptyUrl = `${baseStorageUrl}empty/${jobId}.jpg`;
-          console.log('Manually constructed emptyUrl:', responseData.emptyUrl);
-          
-          // Manually construct the clean URL for clean mode (if needed)
-          responseData.cleanUrl = `${baseStorageUrl}clean/${jobId}.jpg`;
-          console.log('Manually constructed cleanUrl:', responseData.cleanUrl);
-        }
-      }
+    if (responseData.cleanUrl) {
+      responseData.cleanUrl = fixImageUrl(responseData.cleanUrl);
     }
-    
-    // Ensure the response has a valid status field
-    if (!responseData.status) {
-      console.error('Response missing status field:', responseData);
-      throw new Error('Invalid response format: missing status field');
+    if (responseData.styledUrl) {
+      responseData.styledUrl = fixImageUrl(responseData.styledUrl);
     }
+
+    console.log('[checkJobStatus] Status:', responseData.status, 'URLs:', {
+      emptyUrl: responseData.emptyUrl ? 'present' : 'null',
+      cleanUrl: responseData.cleanUrl ? 'present' : 'null', 
+      styledUrl: responseData.styledUrl ? 'present' : 'null'
+    });
     
     return responseData;
   } catch (error) {
-    console.error('Status check error:', error);
+    console.error('Error checking job status:', error);
     throw error;
   }
 };
@@ -259,13 +237,13 @@ export const checkJobStatus = async (jobId: string): Promise<RoomJobStatus> => {
  */
 export const pollJobStatus = async (
   jobId: string,
-  intervalMs = 2000,
-  maxAttempts = 15,
+  intervalMs = 5000,
+  maxAttempts = 20,
   onStatusUpdate?: (status: string) => void
 ): Promise<RoomJobStatus> => {
   let attempts = 0;
   
-  console.log(`Starting polling for job ${jobId} with interval ${intervalMs}ms and max ${maxAttempts} attempts`);
+  console.log(`Starting polling for job ${jobId} with interval ${intervalMs}ms and max ${maxAttempts} attempts (${(maxAttempts * intervalMs) / 1000} seconds total)`);
   
   const poll = async (): Promise<RoomJobStatus> => {
     attempts++;
@@ -281,18 +259,18 @@ export const pollJobStatus = async (
       }
       
       // If job is done or has an error, return the result immediately
-      if (result.status === 'done' || result.status === 'error') {
+      if (result.status === 'done' || result.status === 'error' || result.status === 'empty_complete' || result.status === 'style_error') {
         console.log(`Job ${jobId} completed with status: ${result.status}`);
         return result;
       }
 
       // If we've reached max attempts and status is still 'processing', treat as timeout error
       if (attempts >= maxAttempts) {
-        console.error(`Job ${jobId} processing timed out after ${maxAttempts} attempts.`);
+        console.error(`Job ${jobId} processing timed out after ${maxAttempts} attempts (${(maxAttempts * intervalMs) / 1000} seconds).`);
         return {
           ...result,
           status: 'error',
-          message: `Processing timed out after ${maxAttempts * intervalMs / 1000} seconds. The n8n workflow may be overloaded or failing.`
+          message: `Processing timed out after ${(maxAttempts * intervalMs) / 1000} seconds. Your n8n workflow may need more time or be failing.`
         };
       }
       
@@ -312,4 +290,58 @@ export const pollJobStatus = async (
   };
   
   return poll();
+};
+
+/**
+ * Test webhook connection to ensure it's available
+ * @returns A promise that resolves to a boolean indicating if the connection was successful
+ */
+export const testWebhookConnection = async (): Promise<boolean> => {
+  try {
+    console.log('Testing webhook connection to:', EDGE_FUNCTION_URL);
+    
+    // Test connection with a simple HEAD request to avoid triggering the webhook
+    const response = await fetch(EDGE_FUNCTION_URL, {
+      method: 'HEAD',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    
+    console.log('Connection test response status:', response.status);
+    
+    // N8N webhooks typically return 200 or 405 (Method Not Allowed) for HEAD requests
+    // Both indicate the endpoint is reachable
+    return response.status === 200 || response.status === 405;
+    
+  } catch (error) {
+    console.error('Webhook connection test failed:', error);
+    return false;
+  }
+};
+
+/**
+ * Debug function to test webhook connection with detailed logging
+ */
+export const debugWebhookConnection = async (): Promise<void> => {
+  console.log('=== WEBHOOK CONNECTION DEBUG ===');
+  console.log('EDGE_FUNCTION_URL:', EDGE_FUNCTION_URL);
+  
+  try {
+    console.log('Attempting OPTIONS request...');
+    const optionsResponse = await fetch(EDGE_FUNCTION_URL, {
+      method: 'OPTIONS',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    console.log('OPTIONS response status:', optionsResponse.status);
+    console.log('OPTIONS response headers:', JSON.stringify(Object.fromEntries(optionsResponse.headers.entries())));
+    
+  } catch (error) {
+    console.error('Debug webhook connection failed:', error);
+    console.error('Error details:', JSON.stringify(error));
+  }
+  
+  console.log('=== END DEBUG ===');
 }; 
