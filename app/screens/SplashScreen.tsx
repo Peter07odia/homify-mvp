@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Asset } from 'expo-asset';
 import { RootStackParamList } from '../navigation';
 import { appImages } from '../assets';
+import { useAuth } from '../contexts/AuthContext';
 
 type SplashScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -26,6 +27,7 @@ const LOGO_WIDTH = 550;
 
 const SplashScreen = () => {
   const navigation = useNavigation<SplashScreenNavigationProp>();
+  const { isAuthenticated, loading } = useAuth();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const logoScaleAnim = useRef(new Animated.Value(0.95)).current;
   
@@ -89,16 +91,39 @@ const SplashScreen = () => {
       ])
     ).start();
 
-    // Auto-navigate to onboarding after 5.5 seconds
+    // Auto-navigate after 5.5 seconds, but only if auth state is determined
     const autoNavigateTimer = setTimeout(() => {
-      navigation.navigate('Onboarding');
+      if (!loading) {
+        // If user is authenticated, skip onboarding and go directly to dashboard
+        if (isAuthenticated) {
+          navigation.navigate('Dashboard');
+        } else {
+          navigation.navigate('Onboarding');
+        }
+      }
     }, 5500);
 
     // Cleanup timer on component unmount
     return () => {
       clearTimeout(autoNavigateTimer);
     };
-  }, [navigation]);
+  }, [navigation, isAuthenticated, loading]);
+
+  // If auth state changes while on splash screen, navigate immediately
+  useEffect(() => {
+    if (!loading) {
+      // Small delay to ensure splash screen shows for at least a moment
+      const delayTimer = setTimeout(() => {
+        if (isAuthenticated) {
+          navigation.navigate('Dashboard');
+        } else {
+          navigation.navigate('Onboarding');
+        }
+      }, 2000); // Minimum 2 seconds on splash
+
+      return () => clearTimeout(delayTimer);
+    }
+  }, [loading, isAuthenticated, navigation]);
 
   return (
     <View style={styles.container}>

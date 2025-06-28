@@ -21,6 +21,8 @@ import { Asset } from 'expo-asset';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from '../navigation';
 import { appImages } from '../assets';
+import { useAuth } from '../contexts/AuthContext';
+import AuthPromptModal from '../components/AuthPromptModal';
 
 type OnboardingScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -77,12 +79,14 @@ const slides = [
 
 const OnboardingScreen = () => {
   const navigation = useNavigation<OnboardingScreenNavigationProp>();
+  const { isAuthenticated, shouldShowAuthPrompt, dismissAuthPrompt } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
   const slidesRef = useRef<FlatList>(null);
   const [imageStatuses, setImageStatuses] = useState<Record<string, boolean>>({});
   const [isStarting, setIsStarting] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   
   // Track when each image loads
   const handleImageLoad = (id: string) => {
@@ -114,6 +118,13 @@ const OnboardingScreen = () => {
     
     cacheImages();
   }, [currentIndex]);
+
+  // Show auth prompt when appropriate
+  useEffect(() => {
+    if (shouldShowAuthPrompt && !isAuthenticated) {
+      setShowAuthModal(true);
+    }
+  }, [shouldShowAuthPrompt, isAuthenticated]);
   
   const viewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems[0]) {
@@ -129,6 +140,8 @@ const OnboardingScreen = () => {
     
     // Small delay for visual feedback
     setTimeout(() => {
+      // If user is authenticated, go directly to dashboard
+      // If not authenticated, go to dashboard but auth prompts will appear
       navigation.navigate('Dashboard');
     }, 150);
   }, [navigation]);
@@ -148,8 +161,16 @@ const OnboardingScreen = () => {
       slidesRef.current?.scrollToIndex({ index: currentIndex - 1 });
     }
   };
-  
 
+  const handleAuthPromptDismiss = () => {
+    setShowAuthModal(false);
+    dismissAuthPrompt();
+  };
+
+  const handleSignUp = () => {
+    setShowAuthModal(false);
+    navigation.navigate('Auth');
+  };
 
   const renderOnboardingItem = ({ item }: { item: typeof slides[0] }) => {
     return (
@@ -189,8 +210,6 @@ const OnboardingScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      
-
       
       <View style={{ flex: 1 }}>
         <FlatList
@@ -281,6 +300,13 @@ const OnboardingScreen = () => {
           )}
         </View>
       </View>
+
+      {/* Auth Prompt Modal */}
+      <AuthPromptModal
+        visible={showAuthModal}
+        onDismiss={handleAuthPromptDismiss}
+        onSignUp={handleSignUp}
+      />
     </SafeAreaView>
   );
 };

@@ -1,0 +1,637 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-room-unified",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "665dec4c-7a26-477d-bd40-c843ce3c28bb",
+      "name": "Unified Processing Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1180,
+        -280
+      ],
+      "webhookId": "homify-unified-process"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "jobId",
+              "value": "={{ $json.body.jobId }}"
+            },
+            {
+              "name": "imageUrl",
+              "value": "={{ $json.body.imageUrl }}"
+            },
+            {
+              "name": "userId",
+              "value": "={{ $json.body.userId }}"
+            },
+            {
+              "name": "roomType",
+              "value": "={{ $json.body.roomType || 'living_room' }}"
+            },
+            {
+              "name": "selectedStyle",
+              "value": "={{ $json.body.selectedStyle || 'modern' }}"
+            },
+            {
+              "name": "customPrompt",
+              "value": "={{ $json.body.customPrompt || '' }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "34ef31cf-c9b1-4e11-90cc-bb45b59ddfff",
+      "name": "Prepare Processing Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -940,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4.1",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "ba9de965-7d4a-44cd-8fae-901b8573f898",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        40
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "6Vi7ylWe9vVJqtj2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "agent": "conversationalAgent",
+        "promptType": "define",
+        "text": "=Analyze this room transformation request and generate optimized prompts:\n\nRoom Type: {{ $json.roomType }}\nStyle: {{ $json.selectedStyle }}\nCustom Instructions: {{ $json.customPrompt }}\n\nGenerate two specific prompts:\n1. Empty room prompt that preserves architecture\n2. Style application prompt with all design elements",
+        "options": {
+          "systemMessage": "You are an expert interior design AI agent specializing in room transformations. Your role is to analyze user preferences and generate perfect prompts for DALL-E 2 image editing.\n\nFor each request, you must:\n1. Understand the room type and its specific requirements\n2. Interpret the selected style with professional design knowledge\n3. Blend any custom user instructions seamlessly\n\nStyle Definitions:\n- minimal: Clean lines, neutral palette (white/beige/gray), geometric furniture, uncluttered\n- modern: Bold shapes, sleek furniture, metallic accents, contemporary art\n- bohemian: Rich warm colors, layered textiles, patterned rugs, eclectic mix\n- scandinavian: Light wood, cozy textiles, hygge accessories, natural materials\n- industrial: Exposed metal, dark colors, raw textures, vintage pieces\n- botanical: Abundant plants, natural wood, earth tones, biophilic design\n- farmhouse: Rustic wood, vintage accessories, warm tones, country charm\n- midcentury: Clean lines, warm wood, retro 1950s-60s pieces\n- luxury: High-end materials, elegant furniture, sophisticated palette\n- coastal: Light blues/whites, natural textures, beach-inspired, airy\n\nAlways maintain photorealistic quality and proper perspective.\n\nAvailable models:\n- dall-e-2: The basic model, supports all operations\n- dall-e-3: Higher quality generations, only for new image creation\n- gpt-image-1: Advanced model for generation and edits, always returns base64-encoded images\n\nUse the gpt-image-1 model by default unless otherwise specified."
+        }
+      },
+      "id": "859e4438-1098-431c-832d-0fe4c6c4e04a",
+      "name": "AI Interior Designer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -600,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI designer response and prepare final prompts\nconst designerResponse = $input.item.json;\nconst originalData = $('Prepare Processing Data').item.json;\n\n// Extract prompts from AI response\nlet emptyPrompt = 'Remove all movable furniture and decor from this room. Keep only architectural elements like walls, windows, doors, built-in fixtures, and flooring.';\nlet stylePrompt = '';\n\n// Try to parse structured response\ntry {\n  if (designerResponse.output && typeof designerResponse.output === 'string') {\n    const lines = designerResponse.output.split('\\n');\n    \n    // Look for empty room prompt\n    const emptyIndex = lines.findIndex(line => line.toLowerCase().includes('empty room prompt'));\n    if (emptyIndex !== -1 && lines[emptyIndex + 1]) {\n      emptyPrompt = lines[emptyIndex + 1].replace(/^[0-9.\\s-]+/, '').trim();\n    }\n    \n    // Look for style prompt\n    const styleIndex = lines.findIndex(line => line.toLowerCase().includes('style'));\n    if (styleIndex !== -1 && lines[styleIndex + 1]) {\n      stylePrompt = lines[styleIndex + 1].replace(/^[0-9.\\s-]+/, '').trim();\n    }\n  }\n} catch (e) {\n  console.log('Using fallback prompts');\n}\n\n// Fallback style prompts if AI doesn't generate\nif (!stylePrompt) {\n  const stylePrompts = {\n    minimal: 'Transform into minimal style: clean lines furniture, neutral colors (white, beige, gray), simple geometric pieces, uncluttered spaces',\n    modern: 'Transform into modern style: sleek furniture with bold shapes, metallic accents, innovative materials, contemporary art pieces',\n    bohemian: 'Transform into bohemian style: rich warm colors, layered textiles, patterned rugs, eclectic furniture mix, plants, artistic decorations',\n    scandinavian: 'Transform into Scandinavian style: light wood furniture, cozy textiles, neutral colors, hygge accessories, natural materials',\n    industrial: 'Transform into industrial style: exposed metal fixtures, dark colors, raw textures, leather furniture, vintage industrial pieces',\n    botanical: 'Transform into botanical style: abundant green plants, natural wood furniture, earth tones, nature-inspired decorations',\n    farmhouse: 'Transform into farmhouse style: rustic wood furniture, vintage accessories, warm earth tones, cozy country decorations',\n    midcentury: 'Transform into mid-century modern: clean-lined furniture, warm wood tones, retro accessories, 1950s-60s style pieces',\n    luxury: 'Transform into luxury style: high-end materials, elegant furniture, rich textures, sophisticated color palette, premium finishes',\n    coastal: 'Transform into coastal style: light blues and whites, natural textures, beach-inspired decor, airy bright atmosphere'\n  };\n  \n  stylePrompt = stylePrompts[originalData.selectedStyle] || stylePrompts.modern;\n}\n\n// Add custom prompt if provided\nif (originalData.customPrompt) {\n  stylePrompt += '. ' + originalData.customPrompt;\n}\n\n// Add quality modifiers\nconst qualityModifiers = {\n  standard: 'Maintain good lighting and realistic perspective.',\n  premium: 'Ensure professional interior design quality with perfect lighting and high-end finishes.',\n  ultra: 'Create ultra-premium magazine-worthy design with luxury materials and perfect proportions.'\n};\n\nstylePrompt += ' ' + (qualityModifiers[originalData.quality] || qualityModifiers.standard);\n\nreturn {\n  ...originalData,\n  emptyRoomPrompt: emptyPrompt,\n  stylePrompt: stylePrompt,\n  processedByAI: true\n};"
+      },
+      "id": "ea16f629-0dea-4af9-ba8a-25bdc6695ff4",
+      "name": "Process AI Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.imageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-original",
+      "name": "Download Original Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/edits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "dall-e-2"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.emptyRoomPrompt }}"
+            },
+            {
+              "name": "n",
+              "value": "1"
+            },
+            {
+              "name": "size",
+              "value": "1024x1024"
+            },
+            {
+              "name": "response_format",
+              "value": "b64_json"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-empty-room",
+      "name": "Create Empty Room",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        340,
+        -280
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "6Vi7ylWe9vVJqtj2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "data[0].b64_json",
+        "options": {}
+      },
+      "id": "convert-empty-to-file",
+      "name": "Convert Empty to File",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        600,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/rooms/empty/{{ $('Process AI Prompts').item.json.jobId }}.jpg",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "upload-empty-room",
+      "name": "Upload Empty Room",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        -280
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "w92jWcsgmROGu4Wf",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "78065e0f-0f23-4568-8789-87117bac0f9a",
+      "name": "Wait Between Processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        -280
+      ],
+      "webhookId": "b1c3f33a-4b4f-439a-82b4-76703de4fe3f"
+    },
+    {
+      "parameters": {
+        "url": "=https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/rooms/empty/{{ $('Process AI Prompts').item.json.jobId }}.jpg",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-empty-for-style",
+      "name": "Download Empty for Style",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        -280
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "w92jWcsgmROGu4Wf",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/edits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "dall-e-2"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $('Process AI Prompts').item.json.stylePrompt }}"
+            },
+            {
+              "name": "n",
+              "value": "1"
+            },
+            {
+              "name": "size",
+              "value": "1024x1024"
+            },
+            {
+              "name": "response_format",
+              "value": "b64_json"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "apply-style-to-room",
+      "name": "Apply Style to Room",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1640,
+        -280
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "6Vi7ylWe9vVJqtj2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "data[0].b64_json",
+        "options": {}
+      },
+      "id": "convert-styled-to-file",
+      "name": "Convert Styled to File",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1900,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/rooms/styled/{{ $('Process AI Prompts').item.json.jobId }}.jpg",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "upload-styled-room",
+      "name": "Upload Styled Room",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        -280
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "w92jWcsgmROGu4Wf",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "room_jobs",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Process AI Prompts').item.json.jobId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "room_type",
+              "fieldValue": "={{ $('Process AI Prompts').item.json.roomType }}"
+            },
+            {
+              "fieldId": "applied_style",
+              "fieldValue": "={{ $('Process AI Prompts').item.json.selectedStyle }}"
+            },
+            {
+              "fieldId": "quality_level",
+              "fieldValue": "={{ $('Process AI Prompts').item.json.quality }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ $now() }}"
+            }
+          ]
+        }
+      },
+      "id": "2b0d8f7d-8ae5-425c-a366-f202a23dc040",
+      "name": "Update Final Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        -280
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "w92jWcsgmROGu4Wf",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"jobId\": $('Process AI Prompts').item.json.jobId,\n  \"status\": \"completed\",\n  \"message\": \"Room transformation completed successfully!\",\n  \"emptyRoomUrl\": `https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/public/rooms/empty/${$('Process AI Prompts').item.json.jobId}.jpg`,\n  \"styledRoomUrl\": `https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/public/rooms/styled/${$('Process AI Prompts').item.json.jobId}.jpg`,\n  \"appliedStyle\": $('Process AI Prompts').item.json.selectedStyle,\n  \"roomType\": $('Process AI Prompts').item.json.roomType,\n  \"quality\": $('Process AI Prompts').item.json.quality,\n  \"processedByAI\": true,\n  \"redirectTo\": \"MyPhotos\"\n} }}",
+        "options": {}
+      },
+      "id": "67911086-ca7a-4572-b44b-0c45a17f025f",
+      "name": "Final Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2680,
+        -280
+      ]
+    }
+  ],
+  "connections": {
+    "Unified Processing Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Processing Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Processing Data": {
+      "main": [
+        [
+          {
+            "node": "AI Interior Designer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Interior Designer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Interior Designer": {
+      "main": [
+        [
+          {
+            "node": "Process AI Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Prompts": {
+      "main": [
+        [
+          {
+            "node": "Download Original Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Original Image": {
+      "main": [
+        [
+          {
+            "node": "Create Empty Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Empty Room": {
+      "main": [
+        [
+          {
+            "node": "Convert Empty to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Empty to File": {
+      "main": [
+        [
+          {
+            "node": "Upload Empty Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Empty Room": {
+      "main": [
+        [
+          {
+            "node": "Wait Between Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Between Processing": {
+      "main": [
+        [
+          {
+            "node": "Download Empty for Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Empty for Style": {
+      "main": [
+        [
+          {
+            "node": "Apply Style to Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Style to Room": {
+      "main": [
+        [
+          {
+            "node": "Convert Styled to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Styled to File": {
+      "main": [
+        [
+          {
+            "node": "Upload Styled Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Styled Room": {
+      "main": [
+        [
+          {
+            "node": "Update Final Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Final Status": {
+      "main": [
+        [
+          {
+            "node": "Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "a99de4d7bd77d3e09a508240bc33ec3c3132b195216adccd70933e9d8db1159c"
+  }
+} 

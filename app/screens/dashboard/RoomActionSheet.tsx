@@ -59,12 +59,14 @@ const RoomActionSheet: React.FC<RoomActionSheetProps> = ({
   };
 
   const handleScanRoom = () => {
+    console.log('[RoomActionSheet] Scan room pressed for:', roomType);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onClose();
     onScanRoom();
   };
 
   const handleStyleWithAI = () => {
+    console.log('[RoomActionSheet] Style with AI pressed for:', roomType);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onClose();
     onStyleWithAI();
@@ -164,6 +166,7 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
+    zIndex: 9999,
   },
   backdrop: {
     position: 'absolute',

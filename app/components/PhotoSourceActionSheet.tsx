@@ -7,10 +7,12 @@ import {
   Modal,
   Dimensions,
   Animated,
+  Platform,
 } from 'react-native';
 import { MaterialIcons, FontAwesome6 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
+import Constants from 'expo-constants';
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,15 +49,26 @@ const PhotoSourceActionSheet: React.FC<PhotoSourceActionSheetProps> = ({
   }, [visible]);
 
   const handleTakePhoto = () => {
+    console.log('[PhotoSourceActionSheet] Take photo pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onClose();
-    onTakePhoto();
+    // Small delay to ensure sheet closes before launching camera
+    setTimeout(() => {
+      onTakePhoto();
+    }, 300);
   };
 
+  // Enable camera for all devices - let the actual camera functions handle any restrictions
+  const shouldDisableCamera = false;
+
   const handleChooseFromGallery = () => {
+    console.log('[PhotoSourceActionSheet] Choose from gallery pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onClose();
-    onChooseFromGallery();
+    // Small delay to ensure sheet closes before launching gallery
+    setTimeout(() => {
+      onChooseFromGallery();
+    }, 300);
   };
 
   const handleCancel = () => {
@@ -103,9 +116,13 @@ const PhotoSourceActionSheet: React.FC<PhotoSourceActionSheetProps> = ({
             <View style={styles.actionsContainer}>
               {/* Take Photo Option */}
               <TouchableOpacity 
-                style={styles.actionButton}
+                style={[
+                  styles.actionButton,
+                  shouldDisableCamera && styles.disabledButton
+                ]}
                 onPress={handleTakePhoto}
                 activeOpacity={0.7}
+                disabled={shouldDisableCamera}
               >
                 <View style={[styles.actionIcon, { backgroundColor: '#E3F2FD' }]}>
                   <MaterialIcons name="camera-alt" size={28} color="#2196F3" />
@@ -113,7 +130,10 @@ const PhotoSourceActionSheet: React.FC<PhotoSourceActionSheetProps> = ({
                 <View style={styles.actionContent}>
                   <Text style={styles.actionTitle}>Take Photo</Text>
                   <Text style={styles.actionDescription}>
-                    Use your camera to capture a room
+                    {shouldDisableCamera 
+                      ? 'Camera not available on this device' 
+                      : 'Use your camera to capture a room'
+                    }
                   </Text>
                 </View>
                 <MaterialIcons name="chevron-right" size={24} color="#CCBBAA" />
@@ -245,6 +265,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#666666',
+  },
+  disabledButton: {
+    opacity: 0.5,
+    backgroundColor: '#F5F5F5',
   },
 });
 

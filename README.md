@@ -64,42 +64,58 @@ PhotoConfirmation → Preview (Stage 1) → StyledRoom (Stage 2)
 ```
 homify-mvp/
 ├── app/
-│   ├── App.tsx                      # Main app entry point
-│   ├── navigation/index.tsx         # Navigation configuration
-│   ├── screens/                     # Screen components
-│   │   ├── SplashScreen.tsx
-│   │   ├── OnboardingScreen.tsx
-│   │   ├── PhotoSelectionScreen.tsx
-│   │   ├── CameraScreen.tsx
-│   │   ├── PhotoConfirmationScreen.tsx
-│   │   ├── PreviewScreen.tsx        # Main processing screen
-│   │   ├── StyledRoomScreen.tsx     # Final result display
-│   │   └── StyleSelectionDemo.tsx   # Style selection UI
-│   ├── components/                  # Reusable components
-│   │   ├── ImageComparison.tsx      # Before/after slider
-│   │   ├── AnimatedPreloader.tsx    # Loading animations
-│   │   └── ProcessingError.tsx      # Error handling
-│   ├── services/                    # Business logic
-│   │   ├── roomService.ts           # Core image processing API
-│   │   └── styleService.ts          # Style management
-│   ├── hooks/                       # Custom React hooks
-│   │   ├── useImageProcessing.ts    # Processing state management
-│   │   └── useImageActions.ts       # Image action handlers
+│   ├── components/
+│   │   ├── AuthWrapper.tsx           # Authentication wrapper
+│   │   ├── AuthPromptModal.tsx       # Authentication prompts
+│   │   ├── ChatModal.tsx             # Chat interface
+│   │   ├── NetworkDiagnostics.tsx    # Network debugging
+│   │   ├── OptimizedImage.tsx        # Optimized image component
+│   │   ├── PhotoSourceActionSheet.tsx # Photo source selection
+│   │   └── StyleSelectionComponent.tsx # Style selection UI
+│   ├── contexts/
+│   │   └── AuthContext.tsx           # Authentication context
+│   ├── hooks/
+│   │   ├── useImageActions.ts        # Image action hooks
+│   │   └── useImageProcessing.ts     # Main processing hook
 │   ├── lib/
-│   │   └── supabase.ts             # Supabase client configuration
-│   └── assets/                      # Static assets and workflows
-│       ├── homify_update.json       # n8n empty room workflow
-│       └── homify_style_room_workflow.json # n8n style workflow
-├── supabase/
-│   ├── functions/
-│   │   └── empty-room/              # Edge function for image processing
-│   ├── migrations/                  # Database schema
-│   └── config.toml                  # Supabase configuration
-├── types/
-│   └── env.d.ts                    # Environment variable types
-├── scripts/
-│   └── optimize-images.js          # Image optimization utility
-└── logs/                           # Application logs (cleaned)
+│   │   ├── supabase.ts              # Supabase client
+│   │   └── memoryHelper.ts          # Memory management
+│   ├── navigation/
+│   │   └── index.tsx                # Navigation configuration
+│   ├── screens/
+│   │   ├── dashboard/
+│   │   │   ├── DashboardScreen.tsx  # Main dashboard
+│   │   │   ├── HomeScreen.tsx       # Home tab
+│   │   │   ├── RoomsScreen.tsx      # Rooms management
+│   │   │   ├── OrdersScreen.tsx     # Orders history
+│   │   │   ├── ProfileScreen.tsx    # User profile
+│   │   │   ├── RoomCreationScreen.tsx # Room creation
+│   │   │   └── RoomActionSheet.tsx  # Room actions
+│   │   ├── EditCanvasScreen.tsx     # Main image processing screen
+│   │   ├── ProcessingStatusScreen.tsx # Processing status
+│   │   ├── SplashScreen.tsx         # App splash
+│   │   ├── OnboardingScreen.tsx     # User onboarding
+│   │   ├── AuthScreen.tsx           # Authentication
+│   │   ├── PhotoSelectionScreen.tsx # Photo selection
+│   │   ├── CameraScreen.tsx         # Camera interface
+│   │   ├── StyleConfirmationScreen.tsx # Style confirmation
+│   │   ├── StyledRoomScreen.tsx     # Final results
+│   │   └── ARRoomScanScreen.tsx     # AR room scanning
+│   ├── services/
+│   │   ├── roomService.ts           # Room processing service
+│   │   ├── styleService.ts          # Style management
+│   │   ├── pollingService.ts        # Status polling
+│   │   └── arRoomScanService.ts     # AR scanning
+│   ├── utils/
+│   │   ├── workflowIntegration.ts   # n8n workflow integration
+│   │   ├── photoStorageService.ts   # Photo storage
+│   │   ├── notificationService.ts   # Notifications
+│   │   ├── roomImages.ts            # Room image assets
+│   │   └── permissionDebugger.ts    # Permission debugging
+│   └── assets/                      # Images and static assets
+├── supabase/                        # Supabase configuration
+├── scripts/                         # Development scripts
+└── docs/                           # Documentation
 ```
 
 ## 🎨 Available Design Styles
@@ -284,6 +300,63 @@ getStyleSpecificLoadingMessages(styleId: DesignStyle, mode: ProcessingMode): str
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🔧 Recent Fixes
+
+### 🚨 **CRITICAL NETWORK FIX** - Network Request Failures RESOLVED
+**Issue**: "TypeError: Network request failed" when calling Edge Function
+
+**Root Causes FIXED:**
+1. **FormData Field Name Mismatch**: 
+   - ❌ App was sending: `formData.append('image', ...)`
+   - ✅ Edge Function expects: `formData.get('file')`
+   - **FIXED**: Changed to `formData.append('file', ...)`
+
+2. **Content-Type Header Conflict**:
+   - ❌ Manually setting: `'Content-Type': 'multipart/form-data'`
+   - ✅ Let browser set boundary automatically
+   - **FIXED**: Removed manual Content-Type header
+
+**Result**: Edge Function calls now work correctly, no more network failures!
+
+### Auto-Triggering Prevention (Credit Protection) - CRITICAL UPDATE
+To prevent auto-triggering of workflows and unnecessary credit consumption:
+
+#### ✅ **Root Causes FIXED:**
+1. **PreviewScreen REMOVED** - Consolidated functionality into EditCanvasScreen
+2. **EditCanvasScreen duplicate calls ELIMINATED** - Removed duplicate edge function calls
+3. **App initialization polling DISABLED** - No auto-polling on app startup
+4. **Edge function connectivity tests DISABLED** - No automatic GET requests
+5. **Circuit breaker IMPLEMENTED** - Stops polling failed jobs after 3 attempts
+6. **Polling frequency REDUCED** - Changed from 5 seconds to 10 seconds to save API calls
+7. **Duplicate job detection ADDED** - Edge Function prevents processing same image twice within 10 minutes
+
+#### 🚨 **Previously Found Issues:**
+- **PreviewScreen** was auto-calling `processingActions.startProcessing()` on mount (NOW REMOVED)
+- **EditCanvasScreen** had DUPLICATE calls: both `processingActions.startProcessing()` AND `WorkflowIntegration.startRoomCreation()`
+- Each button press was triggering the edge function **TWICE**
+- App startup was auto-initializing polling and making connectivity tests
+
+#### ✅ **Manual Control Now Required:**
+- Users must manually tap "Start Processing" button in EditCanvasScreen
+- No automatic workflow triggers on app startup, screen navigation, or background processes
+- Complete protection from accidental credit consumption
+
+**Current Workflow:**
+1. User selects photo (Camera/Gallery)
+2. User navigates to EditCanvasScreen
+3. User manually taps "Start Processing" to begin empty room creation
+4. User selects style and applies it manually
+5. Processing completes and shows final result
+
+If you need to check for existing processing jobs, you can:
+1. Go to Dashboard (My Photos) screen
+2. Tap the "Test Workflow" button (if in debug mode)
+3. Select "Check Existing Jobs"
+
+This ensures workflows are only triggered when users explicitly start processing, protecting your credits from auto-consumption.
+
+## ⚙️ Features
 
 ---
 

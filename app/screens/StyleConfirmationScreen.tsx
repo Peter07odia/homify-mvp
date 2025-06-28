@@ -33,11 +33,11 @@ export const StyleConfirmationScreen: React.FC<StyleConfirmationScreenProps> = (
 
   const handleConfirmStyle = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Navigate to Preview with the confirmed style for processing
-    navigation.navigate('Preview', {
+    // Navigate to EditCanvas with the confirmed style for processing
+    navigation.navigate('EditCanvas', {
       imageUri: imageUri,
-      mode: 'clean',
-      confirmedStyle: selectedStyle
+      source: 'gallery',
+      mode: 'clean'
     });
   };
 

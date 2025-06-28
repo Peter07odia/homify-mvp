@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,17 +9,24 @@ import {
   Dimensions,
   Alert,
   Image,
+  Platform,
+  Linking,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import PhotoSaveDebugger from '../../utils/debugPhotoSave';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation';
 import * as ImagePicker from 'expo-image-picker';
 import PhotoSourceActionSheet from '../../components/PhotoSourceActionSheet';
+import ChatModal from '../../components/ChatModal';
+
 import Constants from 'expo-constants';
+import NotificationService from '../../utils/notificationService';
+import { debugPermissions } from '../../utils/permissionDebugger';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 56) / 2; // 2 cards per row with margins (20+20+8+8)
@@ -38,6 +45,27 @@ type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 const HomeScreen = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [showPhotoSourceSheet, setShowPhotoSourceSheet] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+
+  const [hasNotifications, setHasNotifications] = useState(true);
+  const [notificationCount, setNotificationCount] = useState(2);
+
+  // Update notification state when screen focuses
+  useEffect(() => {
+    const updateNotificationState = () => {
+      const count = NotificationService.getNotificationCount();
+      const hasUnread = NotificationService.hasUnreadNotifications();
+      setNotificationCount(count);
+      setHasNotifications(hasUnread);
+    };
+
+    updateNotificationState();
+    
+    // Update every 30 seconds
+    const interval = setInterval(updateNotificationState, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const handleFeaturePress = (feature: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -48,8 +76,8 @@ const HomeScreen = () => {
         console.log('Navigate to Find Ideas');
         break;
       case 'chat-ai':
-        // TODO: Navigate to AI chat
-        console.log('Navigate to AI Chat');
+        // Open chat modal
+        setShowChatModal(true);
         break;
       case 'search-photo':
         // TODO: Navigate to photo search
@@ -64,17 +92,14 @@ const HomeScreen = () => {
 
   const handleTakePhoto = async () => {
     try {
-      console.log('📸 Taking photo...');
+      console.log('📸 Taking photo on physical device...');
       
-      // Check if we're in Expo Go
-      const isExpoGo = __DEV__ && !Constants.isDevice;
-      if (isExpoGo) {
-        Alert.alert(
-          'Camera Not Available', 
-          'Camera access requires a development build. Please use "Choose from Gallery" instead or build a development version of the app.'
-        );
-        return;
-      }
+      // Debug info
+      console.log('📸 Device info:', {
+        isDevice: Constants.isDevice,
+        platform: Platform.OS,
+        executionEnvironment: Constants.executionEnvironment
+      });
       
       // Request camera permissions
       const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
@@ -82,8 +107,16 @@ const HomeScreen = () => {
       
       if (!cameraPermission.granted) {
         Alert.alert(
-          'Permission needed', 
-          'Camera permission is required to take photos. Please enable it in your device settings.'
+          'Camera Permission Required', 
+          'Please allow camera access in your device settings to take photos.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => {
+              if (Platform.OS === 'ios') {
+                Linking.openURL('app-settings:');
+              }
+            }}
+          ]
         );
         return;
       }
@@ -117,9 +150,35 @@ const HomeScreen = () => {
     try {
       console.log('🖼️ Choosing from gallery...');
       
-      // Request media library permissions
-      const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      console.log('🖼️ Gallery permission:', libraryPermission);
+      // Check current permission status first
+      const currentPermission = await ImagePicker.getMediaLibraryPermissionsAsync();
+      console.log('🖼️ Current gallery permission:', currentPermission);
+      
+      let libraryPermission = currentPermission;
+      
+      // Only request if not already granted
+      if (!currentPermission.granted) {
+        if (currentPermission.canAskAgain) {
+          libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          console.log('🖼️ Requested gallery permission:', libraryPermission);
+        } else {
+          Alert.alert(
+            'Permission Required', 
+            'Photo library access was previously denied. Please enable it in your device settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }}
+            ]
+          );
+          return;
+        }
+      }
       
       if (!libraryPermission.granted) {
         Alert.alert(
@@ -129,29 +188,101 @@ const HomeScreen = () => {
         return;
       }
 
-      // Launch image picker
+      // Launch image picker with better configuration
+      console.log('🖼️ Launching image picker...');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
+        exif: false, // Reduce data to avoid potential issues
+        base64: false, // Don't include base64 to reduce memory usage
       });
 
-      console.log('🖼️ Gallery result:', result);
+      console.log('🖼️ Gallery result:', {
+        canceled: result.canceled,
+        hasAssets: result.assets?.length || 0,
+        firstAssetUri: result.assets?.[0]?.uri?.substring(0, 50) || 'none'
+      });
 
-      if (!result.canceled && result.assets[0]) {
+      if (!result.canceled && result.assets?.[0]?.uri) {
         const imageUri = result.assets[0].uri;
-        console.log('🖼️ Navigating to EditCanvas with:', { imageUri, source: 'gallery' });
+        console.log('🖼️ ✅ Successfully selected image, navigating to EditCanvas');
         navigation.navigate('EditCanvas', { 
           imageUri,
           source: 'gallery'
         });
       } else {
-        console.log('🖼️ Gallery was canceled or no image selected');
+        console.log('🖼️ Gallery selection canceled or no valid image selected');
+        if (result.canceled) {
+          console.log('🖼️ User canceled the selection');
+        } else {
+          Alert.alert('No Image Selected', 'Please select a valid image from your gallery.');
+        }
       }
     } catch (error) {
-      console.error('Gallery error:', error);
-      Alert.alert('Error', `Failed to open photo library: ${error.message}`);
+      console.error('🖼️ Gallery error:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to open photo library';
+      if (error.message?.includes('User denied permissions')) {
+        errorMessage = 'Photo library access was denied. Please enable it in Settings.';
+      } else if (error.message?.includes('cancelled') || error.message?.includes('canceled')) {
+        console.log('🖼️ User canceled - no error shown');
+        return; // Don't show error for user cancellation
+      }
+      
+      Alert.alert('Gallery Error', errorMessage, [
+        { text: 'Try Again', onPress: handleChooseFromGallery },
+        { text: 'Cancel', style: 'cancel' }
+      ]);
     }
+  };
+
+  const handleNotificationPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    const recentNotifications = NotificationService.getRecentNotifications(5);
+    
+    if (recentNotifications.length === 0) {
+      Alert.alert('No Notifications', 'You have no recent notifications.');
+      return;
+    }
+
+    const formatTime = (timestamp: number) => {
+      const now = Date.now();
+      const diffInHours = Math.floor((now - timestamp) / (1000 * 60 * 60));
+      
+      if (diffInHours < 1) return 'Just now';
+      if (diffInHours < 24) return `${diffInHours}h ago`;
+      if (diffInHours < 48) return 'Yesterday';
+      
+      const diffInDays = Math.floor(diffInHours / 24);
+      if (diffInDays < 7) return `${diffInDays}d ago`;
+      
+      return new Date(timestamp).toLocaleDateString();
+    };
+
+    const notificationList = recentNotifications
+      .map((notif, index) => `${index + 1}. ${notif.title}\n   ${notif.body}\n   ${formatTime(notif.timestamp)}`)
+      .join('\n\n');
+
+    Alert.alert(
+      'Recent Notifications',
+      notificationList,
+      [
+        { text: 'Clear All', onPress: () => {
+          NotificationService.clearNotifications();
+          setNotificationCount(0);
+          setHasNotifications(false);
+        }},
+        { text: 'OK' }
+      ]
+    );
+  };
+
+  const handleChatPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowChatModal(true);
   };
 
   const featureCards: FeatureCard[] = [
@@ -200,9 +331,40 @@ const HomeScreen = () => {
             <Text style={styles.greeting}>Good morning!</Text>
             <Text style={styles.userName}>Ready to design?</Text>
           </View>
-          <TouchableOpacity style={styles.chatButton}>
-            <MaterialIcons name="chat" size={24} color="#7C5C3E" />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {/* Debug button for testing photo save */}
+            {__DEV__ && (
+              <TouchableOpacity 
+                style={styles.debugButton}
+                onPress={() => PhotoSaveDebugger.testPhotoSaving()}
+              >
+                <MaterialIcons name="bug-report" size={16} color="#FF4444" />
+              </TouchableOpacity>
+            )}
+            
+            {/* Notification Bell */}
+            <TouchableOpacity 
+              style={styles.notificationButton}
+              onPress={handleNotificationPress}
+            >
+              <MaterialIcons name="notifications" size={24} color="#7C5C3E" />
+              {hasNotifications && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {notificationCount > 9 ? '9+' : notificationCount.toString()}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            
+            {/* Modern Chat Button */}
+            <TouchableOpacity 
+              style={styles.modernChatButton}
+              onPress={handleChatPress}
+            >
+              <MaterialIcons name="chat-bubble-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -228,6 +390,8 @@ const HomeScreen = () => {
             <Text style={styles.statLabel}>Items Ordered</Text>
           </View>
         </View>
+
+
 
         {/* Feature Cards Grid */}
         <View style={styles.sectionHeader}>
@@ -312,6 +476,14 @@ const HomeScreen = () => {
         onTakePhoto={handleTakePhoto}
         onChooseFromGallery={handleChooseFromGallery}
       />
+
+      {/* Chat Modal */}
+      <ChatModal
+        visible={showChatModal}
+        onClose={() => setShowChatModal(false)}
+      />
+
+
     </SafeAreaView>
   );
 };
@@ -343,6 +515,61 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginTop: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  debugButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFF5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FFE5E5',
+  },
+  notificationButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F8F8F8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#FF4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  notificationBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  modernChatButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#7C5C3E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#7C5C3E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   chatButton: {
     width: 48,
@@ -515,6 +742,21 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#F0F0F0',
     marginHorizontal: 16,
+  },
+  permissionTestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#7C5C3E',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginTop: 20,
+  },
+  permissionTestText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
   },
 });
 

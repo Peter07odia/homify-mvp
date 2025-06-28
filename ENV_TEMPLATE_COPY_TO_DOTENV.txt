@@ -1,0 +1,42 @@
+# ============================================================
+# HOMIFY ENVIRONMENT CONFIGURATION TEMPLATE
+# ============================================================
+# Copy this content to a file named .env in your project root
+# ============================================================
+
+# Supabase Configuration - Replace with your actual values
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_ANON_KEY=your-actual-anon-key-here
+SUPABASE_SERVICE_ROLE_KEY=your-actual-service-role-key-here
+
+# Expo Public Variables (for client-side access in React Native)
+EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-actual-anon-key-here
+
+# n8n Webhook URLs - Your current unified webhook
+EXPO_PUBLIC_N8N_UNIFIED_WEBHOOK_URL=https://jabaranks7.app.n8n.cloud/webhook/process-room-unified
+N8N_UNIFIED_WEBHOOK_URL=https://jabaranks7.app.n8n.cloud/webhook/process-room-unified
+
+# Legacy n8n URLs (for backward compatibility)
+N8N_WEBHOOK_URL=https://jabaranks7.app.n8n.cloud/webhook/empty-room
+N8N_STYLE_WEBHOOK_URL=https://jabaranks7.app.n8n.cloud/webhook/style-room
+
+# n8n Authentication (if your webhook requires basic auth)
+N8N_WEBHOOK_AUTH_USERNAME=
+N8N_WEBHOOK_AUTH_PASSWORD=
+
+# Development Environment
+NODE_ENV=development
+EXPO_PUBLIC_ENV=development
+
+# ============================================================
+# INSTRUCTIONS TO COMPLETE SETUP:
+# ============================================================
+# 1. Copy this entire content to a new file named .env in your project root
+# 2. Go to your Supabase Dashboard → Settings → API
+# 3. Replace "https://your-project-id.supabase.co" with your actual URL
+# 4. Replace "your-actual-anon-key-here" with your anon/public key
+# 5. Replace "your-actual-service-role-key-here" with your service role key
+# 6. Save the .env file and restart your Expo development server
+# 7. Run the database reset as described in DATABASE_RESET_GUIDE.md
+# ============================================================ 

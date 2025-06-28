@@ -8,22 +8,28 @@ import {
   TouchableOpacity,
   Image,
   Switch,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useAuth } from '../../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 
 interface ProfileOption {
   id: string;
   title: string;
-  subtitle?: string;
+  subtitle: string;
   icon: string;
-  type: 'navigation' | 'toggle' | 'action';
+  type: 'navigation' | 'toggle';
+  action?: () => void;
   value?: boolean;
-  action: () => void;
+  onToggle?: (value: boolean) => void;
 }
 
 const ProfileScreen = () => {
+  const { user, signOut, isAuthenticated } = useAuth();
+  const navigation = useNavigation();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(false);
 
@@ -53,9 +59,39 @@ const ProfileScreen = () => {
         console.log('Navigate to About');
         break;
       case 'sign-out':
-        console.log('Sign Out');
+        handleSignOut();
         break;
     }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+              // Navigation will be handled by auth state change
+            } catch (error) {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSignIn = () => {
+    // @ts-ignore - navigation is properly typed in actual usage
+    navigation.navigate('Auth');
   };
 
   const profileOptions: ProfileOption[] = [
@@ -89,25 +125,25 @@ const ProfileScreen = () => {
     {
       id: 'notifications',
       title: 'Push Notifications',
-      subtitle: 'Get updates about your projects',
+      subtitle: 'Get notified about new features',
       icon: 'notifications',
       type: 'toggle',
       value: notificationsEnabled,
-      action: () => setNotificationsEnabled(!notificationsEnabled),
+      onToggle: setNotificationsEnabled,
     },
     {
       id: 'auto-sync',
       title: 'Auto Sync',
-      subtitle: 'Automatically sync your projects',
+      subtitle: 'Automatically sync your designs',
       icon: 'sync',
       type: 'toggle',
       value: autoSyncEnabled,
-      action: () => setAutoSyncEnabled(!autoSyncEnabled),
+      onToggle: setAutoSyncEnabled,
     },
     {
       id: 'privacy',
       title: 'Privacy Settings',
-      subtitle: 'Control your data and privacy',
+      subtitle: 'Manage your data and privacy',
       icon: 'privacy-tip',
       type: 'navigation',
       action: () => handleOptionPress('privacy'),
@@ -118,16 +154,16 @@ const ProfileScreen = () => {
     {
       id: 'help',
       title: 'Help & Support',
-      subtitle: 'Get help with the app',
-      icon: 'help-outline',
+      subtitle: 'Get help and contact support',
+      icon: 'help',
       type: 'navigation',
       action: () => handleOptionPress('help'),
     },
     {
       id: 'about',
       title: 'About Homify',
-      subtitle: 'Version 1.0.0',
-      icon: 'info-outline',
+      subtitle: 'App version and information',
+      icon: 'info',
       type: 'navigation',
       action: () => handleOptionPress('about'),
     },
@@ -136,33 +172,63 @@ const ProfileScreen = () => {
   const renderOption = (option: ProfileOption) => (
     <TouchableOpacity
       key={option.id}
-      style={styles.optionItem}
+      style={[
+        styles.optionItem,
+        option.id === supportOptions[supportOptions.length - 1].id && { borderBottomWidth: 0 }
+      ]}
       onPress={option.action}
       activeOpacity={0.7}
     >
       <View style={styles.optionIcon}>
-        <MaterialIcons name={option.icon as any} size={24} color="#7C5C3E" />
+        <MaterialIcons name={option.icon as any} size={20} color="#7C5C3E" />
       </View>
-      
       <View style={styles.optionContent}>
         <Text style={styles.optionTitle}>{option.title}</Text>
-        {option.subtitle && (
-          <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-        )}
+        <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
       </View>
-      
       {option.type === 'toggle' ? (
         <Switch
           value={option.value}
-          onValueChange={option.action}
+          onValueChange={option.onToggle}
           trackColor={{ false: '#E0E0E0', true: '#7C5C3E' }}
-          thumbColor={option.value ? '#FFFFFF' : '#FFFFFF'}
+          thumbColor="#FFFFFF"
         />
       ) : (
-        <MaterialIcons name="chevron-right" size={24} color="#CCBBAA" />
+        <MaterialIcons name="chevron-right" size={20} color="#CCCCCC" />
       )}
     </TouchableOpacity>
   );
+
+  // Show sign-in prompt if user is not authenticated
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
+        
+        <View style={styles.signInPromptContainer}>
+          <View style={styles.signInPromptContent}>
+            <MaterialIcons name="account-circle" size={80} color="#E0D5C9" />
+            <Text style={styles.signInPromptTitle}>Sign In to Your Account</Text>
+            <Text style={styles.signInPromptSubtitle}>
+              Access your saved designs, sync across devices, and unlock premium features
+            </Text>
+            
+            <TouchableOpacity
+              style={styles.signInButton}
+              onPress={handleSignIn}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.signInButtonText}>Sign In</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.signInPromptFooter}>
+              Don't have an account? Sign up when you tap Sign In
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -177,7 +243,7 @@ const ProfileScreen = () => {
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: 'https://via.placeholder.com/100x100/7C5C3E/FFFFFF?text=JD' }}
+              source={{ uri: `https://via.placeholder.com/100x100/7C5C3E/FFFFFF?text=${user?.user_metadata?.full_name?.charAt(0) || 'U'}` }}
               style={styles.avatar}
             />
             <TouchableOpacity style={styles.editAvatarButton}>
@@ -186,8 +252,12 @@ const ProfileScreen = () => {
           </View>
           
           <View style={styles.profileInfo}>
-            <Text style={styles.userName}>John Doe</Text>
-            <Text style={styles.userEmail}>john.doe@example.com</Text>
+            <Text style={styles.userName}>
+              {user?.user_metadata?.full_name || 'User'}
+            </Text>
+            <Text style={styles.userEmail}>
+              {user?.email || 'user@example.com'}
+            </Text>
             
             <View style={styles.proContainer}>
               <View style={styles.proBadge}>
@@ -254,7 +324,7 @@ const ProfileScreen = () => {
         {/* App Version */}
         <View style={styles.versionContainer}>
           <Text style={styles.versionText}>Homify v1.0.0</Text>
-          <Text style={styles.buildText}>Build 2024.1.1</Text>
+          <Text style={styles.buildText}>Build 2024.1</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -270,25 +340,80 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 120,
+    paddingBottom: 40,
+  },
+  signInPromptContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  signInPromptContent: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  signInPromptTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  signInPromptSubtitle: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  signInButton: {
+    backgroundColor: '#7C5C3E',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  signInButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  signInPromptFooter: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
   },
   profileHeader: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginTop: 20,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   avatarContainer: {
     position: 'relative',
-    marginBottom: 16,
+    marginRight: 16,
   },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#E0D5C9',
   },
   editAvatarButton: {
     position: 'absolute',
@@ -304,16 +429,16 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   profileInfo: {
-    alignItems: 'center',
+    flex: 1,
   },
   userName: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 4,
   },
   userEmail: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666666',
     marginBottom: 12,
   },
@@ -325,9 +450,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#7C5C3E',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
     marginRight: 8,
   },
   proText: {
@@ -344,9 +469,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     marginHorizontal: 20,
-    marginTop: 20,
-    borderRadius: 16,
+    marginTop: 16,
     paddingVertical: 20,
+    borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -361,6 +486,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#7C5C3E',
+    marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,

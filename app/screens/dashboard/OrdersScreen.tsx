@@ -80,34 +80,7 @@ const OrdersScreen = () => {
     },
   ];
 
-  const mockOrders: Order[] = [
-    {
-      id: '1',
-      orderNumber: 'ORD-2024-001',
-      items: 3,
-      total: '$1,247.99',
-      status: 'shipped',
-      date: '2 days ago',
-      estimatedDelivery: 'Tomorrow',
-    },
-    {
-      id: '2',
-      orderNumber: 'ORD-2024-002',
-      items: 1,
-      total: '$89.99',
-      status: 'processing',
-      date: '1 week ago',
-      estimatedDelivery: '3-5 days',
-    },
-    {
-      id: '3',
-      orderNumber: 'ORD-2024-003',
-      items: 5,
-      total: '$2,156.50',
-      status: 'delivered',
-      date: '2 weeks ago',
-    },
-  ];
+  const mockOrders: Order[] = [];
 
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
@@ -169,24 +142,6 @@ const OrdersScreen = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Quick Stats */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>12</Text>
-            <Text style={styles.statLabel}>Total Orders</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>$3.2K</Text>
-            <Text style={styles.statLabel}>Total Spent</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>2</Text>
-            <Text style={styles.statLabel}>In Transit</Text>
-          </View>
-        </View>
-
         {/* Feature Cards */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Shopping Tools</Text>
@@ -342,39 +297,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 100,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginTop: 20,
-    borderRadius: 16,
-    paddingVertical: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#7C5C3E',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666666',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#F0F0F0',
-    marginVertical: 8,
   },
   sectionHeader: {
     flexDirection: 'row',

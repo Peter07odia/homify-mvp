@@ -1,0 +1,409 @@
+{
+  "name": "Simplified Homify Room Transformation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "transform-room-simple",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-entry",
+      "name": "Room Transform Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "webhookId": "homify-transform-simple"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "jobId",
+              "value": "={{ $json.body.jobId }}"
+            },
+            {
+              "name": "imageUrl",
+              "value": "={{ $json.body.imageUrl }}"
+            },
+            {
+              "name": "userId",
+              "value": "={{ $json.body.userId || 'anonymous' }}"
+            },
+            {
+              "name": "roomType",
+              "value": "={{ $json.body.roomType || 'living-room' }}"
+            },
+            {
+              "name": "selectedStyle",
+              "value": "={{ $json.body.selectedStyle || 'contemporary' }}"
+            },
+            {
+              "name": "customPrompt",
+              "value": "={{ $json.body.customPrompt || '' }}"
+            },
+            {
+              "name": "quality",
+              "value": "={{ $json.body.quality || 'standard' }}"
+            },
+            {
+              "name": "preserveArchitecture",
+              "value": "={{ $json.body.preserveArchitecture !== false }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-data",
+      "name": "Prepare Request Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 500
+        }
+      },
+      "id": "openai-model",
+      "name": "OpenAI GPT-4",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [560, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "your_openai_credential_id",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "agent": "conversationalAgent",
+        "promptType": "define",
+        "text": "=You are an expert interior designer. Analyze this transformation request and create an optimized DALL-E prompt that preserves the original room's architecture while applying the requested style.\n\n**Request Details:**\n- Room Type: {{ $json.roomType }}\n- Desired Style: {{ $json.selectedStyle }}\n- Custom Instructions: {{ $json.customPrompt || 'None' }}\n- Quality Level: {{ $json.quality }}\n- Preserve Architecture: {{ $json.preserveArchitecture }}\n\n**Style Definitions:**\n- contemporary: Clean lines, neutral colors, current trends, sophisticated finishes\n- modern: Sleek furniture, bold shapes, metallic accents, innovative materials\n- scandinavian: Light woods, cozy textiles, neutral colors, hygge elements\n- industrial: Exposed materials, metal accents, raw textures, urban aesthetic\n- boho: Rich textures, vibrant colors, layered textiles, eclectic mix\n- farmhouse: Natural wood, vintage accessories, warm earth tones, country charm\n- mediterranean: Terracotta, wrought iron, warm colors, coastal elements\n- minimalist: Simple forms, uncluttered spaces, essential elements only\n\n**Task:** Generate a single, detailed DALL-E prompt that:\n1. Preserves the existing room layout, windows, doors, and architectural features\n2. Updates furniture, decor, and color scheme to match the {{ $json.selectedStyle }} style\n3. Incorporates any custom instructions: {{ $json.customPrompt }}\n4. Maintains realistic lighting and proportions\n5. Ensures high-quality, magazine-worthy interior design\n\nProvide ONLY the DALL-E prompt, no additional text or explanations.",
+        "options": {}
+      },
+      "id": "ai-prompt-generator",
+      "name": "AI Prompt Generator",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI-generated prompt and prepare for DALL-E\nconst aiResponse = $input.item.json;\nconst originalData = $('Prepare Request Data').item.json;\n\n// Extract the DALL-E prompt from AI response\nlet dallePrompt = '';\nif (aiResponse.output && typeof aiResponse.output === 'string') {\n  dallePrompt = aiResponse.output.trim();\n  \n  // Clean up any markdown or extra formatting\n  dallePrompt = dallePrompt.replace(/^[\"'`]|[\"'`]$/g, ''); // Remove quotes\n  dallePrompt = dallePrompt.replace(/^#+\\s*/, ''); // Remove markdown headers\n  dallePrompt = dallePrompt.split('\\n')[0]; // Take first line if multiple\n}\n\n// Fallback prompt if AI generation fails\nif (!dallePrompt || dallePrompt.length < 20) {\n  const styleDescriptions = {\n    'contemporary': 'contemporary style with clean lines, neutral colors, and sophisticated finishes',\n    'modern': 'modern style with sleek furniture, bold shapes, and metallic accents',\n    'scandinavian': 'Scandinavian style with light wood, cozy textiles, and hygge elements',\n    'industrial': 'industrial style with exposed materials, metal accents, and raw textures',\n    'boho': 'bohemian style with rich textures, vibrant colors, and layered textiles',\n    'farmhouse': 'farmhouse style with natural wood, vintage accessories, and warm earth tones',\n    'mediterranean': 'Mediterranean style with terracotta, wrought iron, and warm coastal colors',\n    'minimalist': 'minimalist style with simple forms, uncluttered spaces, and essential elements only'\n  };\n  \n  const styleDesc = styleDescriptions[originalData.selectedStyle] || 'contemporary style';\n  dallePrompt = `Transform this ${originalData.roomType.replace('-', ' ')} interior to ${styleDesc}, preserving the original room layout, windows, doors, and architectural features. Update furniture, decor, and color scheme while maintaining realistic lighting and proportions. High-quality interior design.`;\n  \n  if (originalData.customPrompt) {\n    dallePrompt += ` Additional requirements: ${originalData.customPrompt}`;\n  }\n}\n\n// Add quality modifiers based on request\nconst qualityModifiers = {\n  'standard': ', professional interior design quality',\n  'premium': ', magazine-worthy interior design with luxury finishes',\n  'ultra': ', ultra-premium architectural photography quality with perfect lighting'\n};\n\ndallePrompt += (qualityModifiers[originalData.quality] || qualityModifiers.standard);\n\n// Ensure prompt length is reasonable for DALL-E\nif (dallePrompt.length > 1000) {\n  dallePrompt = dallePrompt.substring(0, 997) + '...';\n}\n\nreturn {\n  ...originalData,\n  transformationPrompt: dallePrompt,\n  processedByAI: true\n};"
+      },
+      "id": "process-prompt",
+      "name": "Process AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.imageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-image",
+      "name": "Download Original Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 0]
+    },
+    {
+      "parameters": {
+        "model": "dall-e-3",
+        "prompt": "={{ $('AI Prompt Generator').item.json.transformationPrompt }}",
+        "options": {
+          "size": "1024x1024",
+          "response_format": "b64_json",
+          "quality": "={{ $('Process AI Prompt').item.json.quality }}"
+        }
+      },
+      "id": "transform-image",
+      "name": "Transform with DALL-E",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.4,
+      "position": [1400, 0],
+      "credentials": {
+        "openAiApi": {
+          "id": "your_openai_credential_id",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "data[0].b64_json",
+        "options": {}
+      },
+      "id": "convert-to-file",
+      "name": "Convert to File",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [1680, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/room-images/processed/{{ $('Process AI Prompt').item.json.jobId }}.jpg",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "upload-transformed",
+      "name": "Upload Transformed Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 0],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your_supabase_credential_id",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "room_jobs",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Process AI Prompt').item.json.jobId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "room_type",
+              "fieldValue": "={{ $('Process AI Prompt').item.json.roomType }}"
+            },
+            {
+              "fieldId": "applied_style",
+              "fieldValue": "={{ $('Process AI Prompt').item.json.selectedStyle }}"
+            },
+            {
+              "fieldId": "quality_level",
+              "fieldValue": "={{ $('Process AI Prompt').item.json.quality }}"
+            },
+            {
+              "fieldId": "transformation_prompt",
+              "fieldValue": "={{ $('Process AI Prompt').item.json.transformationPrompt }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ $now() }}"
+            }
+          ]
+        }
+      },
+      "id": "update-status",
+      "name": "Update Job Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2240, 0],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your_supabase_credential_id",
+          "name": "Supabase Prod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"jobId\": $('Process AI Prompt').item.json.jobId,\n  \"status\": \"completed\",\n  \"message\": \"Room transformation completed successfully!\",\n  \"originalImageUrl\": $('Process AI Prompt').item.json.imageUrl,\n  \"transformedImageUrl\": `https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/public/room-images/processed/${$('Process AI Prompt').item.json.jobId}.jpg`,\n  \"appliedStyle\": $('Process AI Prompt').item.json.selectedStyle,\n  \"roomType\": $('Process AI Prompt').item.json.roomType,\n  \"quality\": $('Process AI Prompt').item.json.quality,\n  \"transformationPrompt\": $('Process AI Prompt').item.json.transformationPrompt,\n  \"preservedArchitecture\": $('Process AI Prompt').item.json.preserveArchitecture,\n  \"processedByAI\": true,\n  \"redirectTo\": \"StyledRoom\",\n  \"processingTime\": $now() - new Date($('Process AI Prompt').item.json.timestamp).getTime()\n} }}",
+        "options": {}
+      },
+      "id": "final-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2520, 0]
+    }
+  ],
+  "connections": {
+    "Room Transform Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Request Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Request Data": {
+      "main": [
+        [
+          {
+            "node": "AI Prompt Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Prompt Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Prompt Generator": {
+      "main": [
+        [
+          {
+            "node": "Process AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "Download Original Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Original Image": {
+      "main": [
+        [
+          {
+            "node": "Transform with DALL-E",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform with DALL-E": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Upload Transformed Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Transformed Image": {
+      "main": [
+        [
+          {
+            "node": "Update Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Job Status": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Room Transform Webhook": [
+      {
+        "headers": {
+          "host": "jabaranks7.app.n8n.cloud",
+          "user-agent": "Deno/1.45.2",
+          "content-length": "400",
+          "accept": "*/*",
+          "content-type": "application/json"
+        },
+        "params": {},
+        "query": {},
+        "body": {
+          "jobId": "test-job-123",
+          "imageUrl": "https://avsfthvjoueoohlegagx.supabase.co/storage/v1/object/public/room-images/original/test-job-123.jpg",
+          "userId": "user-456",
+          "roomType": "living-room",
+          "selectedStyle": "scandinavian",
+          "customPrompt": "Make it cozy with lots of plants",
+          "quality": "premium",
+          "preserveArchitecture": true,
+          "timestamp": "2025-01-26T16:27:28.352Z"
+        },
+        "webhookUrl": "https://jabaranks7.app.n8n.cloud/webhook/transform-room-simple",
+        "executionMode": "production"
+      }
+    ]
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "simplified-homify-workflow"
+  }
+} 

@@ -12,7 +12,9 @@ import ProfileScreen from './ProfileScreen';
 
 export type DashboardTabParamList = {
   Home: undefined;
-  Rooms: undefined;
+  Rooms: {
+    initialTab?: string;
+  } | undefined;
   Orders: undefined;
   Profile: undefined;
 };

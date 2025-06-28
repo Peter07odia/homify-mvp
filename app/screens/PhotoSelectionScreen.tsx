@@ -19,6 +19,8 @@ import * as Haptics from 'expo-haptics';
 import { MaterialIcons, FontAwesome6 } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation';
 import { debugPermissions } from '../utils/permissionDebugger';
+import * as Camera from 'expo-camera';
+import Constants from 'expo-constants';
 
 type PhotoSelectionNavigationProp = NativeStackNavigationProp<RootStackParamList, 'PhotoSelection'>;
 type PhotoSelectionRouteProp = RouteProp<RootStackParamList, 'PhotoSelection'>;
@@ -45,14 +47,14 @@ const PhotoSelectionScreen = () => {
         return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 10;
       },
       onPanResponderGrant: () => {
-        pan.setOffset(pan._value);
+        pan.setValue(0);
       },
       onPanResponderMove: (evt, gestureState) => {
         // Update animation value
         pan.setValue(gestureState.dx);
       },
       onPanResponderRelease: (evt, gestureState) => {
-        pan.flattenOffset();
+        // No need to flattenOffset since we're not using setOffset
         
         const { dx, vx } = gestureState;
         
@@ -98,26 +100,125 @@ const PhotoSelectionScreen = () => {
     navigation.navigate('CameraDebug' as never);
   }, [navigation]);
 
-  // Handle camera press
+  // Handle gallery press
+  const handleGalleryPress = useCallback(async () => {
+    try {
+      console.log('[PhotoSelectionScreen] 🖼️ Starting gallery selection...');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      
+      // Request media library permissions
+      console.log('[PhotoSelectionScreen] 🔐 Requesting media library permissions...');
+      const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      console.log('[PhotoSelectionScreen] 🔐 Permission result:', libraryPermission);
+      
+      if (!libraryPermission.granted) {
+        Alert.alert('Permission needed', 'Photo library permission is required to select images.');
+        return;
+      }
+
+      // Launch image picker with simplified, reliable settings
+      console.log('[PhotoSelectionScreen] 📱 Launching image picker...');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      console.log('[PhotoSelectionScreen] 📱 Image picker result:', {
+        canceled: result.canceled,
+        hasAssets: result.assets ? result.assets.length : 0,
+        firstAsset: result.assets && result.assets[0] ? {
+          uri: result.assets[0].uri?.substring(0, 50) + '...',
+          width: result.assets[0].width,
+          height: result.assets[0].height,
+          type: result.assets[0].type
+        } : null
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        console.log('[PhotoSelectionScreen] ✅ Gallery image selected successfully');
+        console.log('[PhotoSelectionScreen] 🎯 Navigating to EditCanvas with mode:', mode);
+        
+        // Navigate based on mode
+        if (mode === 'style') {
+          console.log('[PhotoSelectionScreen] 📍 Navigating for style mode');
+          navigation.navigate('EditCanvas', { 
+            imageUri,
+            source: 'gallery'
+          });
+        } else {
+          console.log('[PhotoSelectionScreen] 📍 Navigating for empty mode');
+          navigation.navigate('EditCanvas', { 
+            imageUri,
+            source: 'gallery', // Changed from 'camera' to 'gallery' for consistency
+            mode: 'empty'
+          });
+        }
+      } else {
+        console.log('[PhotoSelectionScreen] ❌ Gallery selection was canceled or no image selected');
+        if (result.canceled) {
+          console.log('[PhotoSelectionScreen] ℹ️ User canceled the picker');
+        } else {
+          console.log('[PhotoSelectionScreen] ❓ Unknown issue with picker result');
+        }
+      }
+    } catch (error) {
+      console.error('[PhotoSelectionScreen] 💥 Gallery error:', error);
+      Alert.alert('Error', `Failed to open photo library: ${error.message}`);
+    }
+  }, [navigation, mode]);
+
+  // Handle camera press with enhanced environment detection
   const handleCameraPress = useCallback(async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       
-      // Check if running on simulator
-      const isSimulator = Platform.OS === 'ios' && !Platform.isPad && Platform.isTVOS === false;
+      // Improved environment detection
+      const isExpoGoApp = Constants.executionEnvironment === 'bare' ? false : Constants.appOwnership === 'expo';
+      const isSimulator = !Constants.isDevice;
       
+      console.log('📸 Environment check:', {
+        executionEnvironment: Constants.executionEnvironment,
+        appOwnership: Constants.appOwnership,
+        isDevice: Constants.isDevice,
+        isExpoGo: isExpoGoApp,
+        isSimulator
+      });
+      
+      // Handle simulator with better options
       if (isSimulator) {
+        console.log('🍎 Simulator detected - providing camera alternatives');
+        
         Alert.alert(
-          'Simulator Limitation', 
-          'Camera is not available in the iOS Simulator. Please test on a physical device or use "Choose from Gallery" instead.',
+          '📱 Camera in Simulator',
+          'Camera is not available in the simulator. Choose an alternative:',
           [
-            { text: 'Use Gallery', onPress: handleGalleryPress },
-            { text: 'OK' }
+            {
+              text: 'Use Test Image',
+              onPress: () => {
+                console.log('🧪 Using test image for simulator');
+                // Navigate with a placeholder image for testing
+                navigation.navigate('EditCanvas', { 
+                  imageUri: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&h=600',
+                  source: 'camera',
+                  mode: 'empty'
+                });
+              }
+            },
+            {
+              text: 'Open Gallery',
+              onPress: handleGalleryPress
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel'
+            }
           ]
         );
         return;
       }
-      
+
       // Request camera permissions
       const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
       if (!cameraPermission.granted) {
@@ -125,77 +226,24 @@ const PhotoSelectionScreen = () => {
         return;
       }
 
-      // Launch camera
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const imageUri = result.assets[0].uri;
-        console.log('[PhotoSelectionScreen] Camera image captured:', imageUri);
-        
-        // Navigate based on mode
-        if (mode === 'style') {
-          navigation.navigate('EditCanvas', { 
-            imageUri,
-            source: 'camera'
-          });
-        } else {
-          navigation.navigate('Preview', { 
-            imageUri,
-            mode: 'empty'
-          });
-        }
+      // For now, just navigate to camera screen - remove hardware check
+      console.log('[PhotoSelectionScreen] Navigating to camera');
+      if (mode === 'style') {
+        navigation.navigate('Camera', { 
+          returnToPreview: false,
+          activeJobId: undefined
+        });
+      } else {
+        navigation.navigate('Camera', { 
+          returnToPreview: false,
+          activeJobId: undefined
+        });
       }
     } catch (error) {
       console.error('[PhotoSelectionScreen] Camera error:', error);
       Alert.alert('Error', 'Failed to open camera. Please try again.');
     }
   }, [navigation, handleGalleryPress]);
-
-  // Handle gallery press
-  const handleGalleryPress = useCallback(async () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      
-      // Request media library permissions
-      const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!libraryPermission.granted) {
-        Alert.alert('Permission needed', 'Photo library permission is required to select images.');
-        return;
-      }
-
-      // Launch image picker
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const imageUri = result.assets[0].uri;
-        console.log('[PhotoSelectionScreen] Gallery image selected:', imageUri);
-        
-        // Navigate based on mode
-        if (mode === 'style') {
-          navigation.navigate('EditCanvas', { 
-            imageUri,
-            source: 'gallery'
-          });
-        } else {
-          navigation.navigate('Preview', { 
-            imageUri,
-            mode: 'empty'
-          });
-        }
-      }
-    } catch (error) {
-      console.error('[PhotoSelectionScreen] Gallery error:', error);
-      Alert.alert('Error', 'Failed to open photo library. Please try again.');
-    }
-  }, [navigation]);
 
   // Handle return to preview if there's an active job
   const handleReturnToPreview = useCallback(() => {
@@ -283,6 +331,40 @@ const PhotoSelectionScreen = () => {
               <Text style={styles.actionButtonText}>Camera Debug</Text>
               <Text style={styles.actionButtonSubtext}>
                 Test camera permissions and functionality
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Simple Gallery Test Button */}
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#4CAF50', marginBottom: 16 }]}
+            onPress={async () => {
+              try {
+                console.log('🧪 [TestButton] Testing image picker...');
+                const result = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ['images'],
+                  allowsEditing: false,
+                  quality: 0.3, // Lower quality for faster testing
+                });
+                console.log('🧪 [TestButton] Result:', result);
+                if (!result.canceled && result.assets?.[0]) {
+                  Alert.alert('Success!', `Image selected: ${result.assets[0].uri.substring(0, 50)}...`);
+                } else {
+                  Alert.alert('Canceled', 'Image selection was canceled');
+                }
+              } catch (error) {
+                console.error('🧪 [TestButton] Error:', error);
+                Alert.alert('Error', error.message);
+              }
+            }}
+          >
+            <View style={styles.actionButtonContent}>
+              <View style={styles.iconContainer}>
+                <MaterialIcons name="science" size={32} color="#FFFFFF" />
+              </View>
+              <Text style={styles.actionButtonText}>Test Gallery Picker</Text>
+              <Text style={styles.actionButtonSubtext}>
+                Simple test without navigation
               </Text>
             </View>
           </TouchableOpacity>

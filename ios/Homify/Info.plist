@@ -40,20 +40,18 @@
     <key>NSAppTransportSecurity</key>
     <dict>
       <key>NSAllowsArbitraryLoads</key>
-      <false/>
+      <true/>
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
     <key>NSCameraUsageDescription</key>
-    <string>Allow Homify to access your camera to take photos of your room and perform AR room scanning.</string>
+    <string>Homify needs camera access to take photos of your rooms for AI-powered interior design recommendations.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your microphone</string>
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to save photos</string>
+    <string>Homify needs microphone access for enhanced AR room scanning features.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Allow Homify to access your photos to save processed images.</string>
+    <string>Homify needs access to your photo library to select room images for AI-powered interior design recommendations.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Allow Homify to save photos to your photo library.</string>
+    <string>Homify needs permission to save your redesigned room images to your photo library.</string>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
     <key>UIRequiredDeviceCapabilities</key>

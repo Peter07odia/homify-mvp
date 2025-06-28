@@ -106,8 +106,9 @@ const CameraScreen = () => {
       
       if (photo) {
         console.log('[CameraScreen] Photo captured:', photo.uri);
-        navigation.navigate('Preview', { 
+        navigation.navigate('EditCanvas', { 
           imageUri: photo.uri,
+          source: 'camera',
           mode: 'empty'
         });
       }
@@ -165,13 +166,17 @@ const CameraScreen = () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets[0]) {
-        navigation.navigate('Preview', { imageUri: result.assets[0].uri, mode: 'empty' });
+        navigation.navigate('EditCanvas', { 
+          imageUri: result.assets[0].uri, 
+          source: 'gallery',
+          mode: 'empty' 
+        });
       }
     } catch (error) {
       console.error('Error picking image:', error);
