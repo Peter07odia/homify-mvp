@@ -15,9 +15,6 @@ You're getting a fetch error because your `.env` file isn't properly configured 
 2. Click on your project
 3. Go to **Settings** → **API**
 4. Copy these values:
-   - **URL** (looks like: `https://abcdefgh.supabase.co`)
-   - **anon public** key (starts with `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`)
-   - **service_role** key (also starts with `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`)
 
 ### Step 3: Update your .env file
 Replace these placeholders in your `.env` file:
@@ -28,13 +25,7 @@ SUPABASE_ANON_KEY=your-actual-anon-key-here
 SUPABASE_SERVICE_ROLE_KEY=your-actual-service-role-key-here
 
 # To your actual values:
-SUPABASE_URL=https://abcdefgh.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# AND ALSO update the EXPO_PUBLIC versions:
-EXPO_PUBLIC_SUPABASE_URL=https://abcdefgh.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 ### Step 4: Restart your app
